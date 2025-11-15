@@ -64,7 +64,7 @@ import docassemble.base.parse
 import docassemble.base.pdftk
 from docassemble.base.standardformatter import as_html, as_sms, get_choices_with_abb
 import docassemble.base.util
-from docassemble.base.util import DAEmail, DAEmailRecipientList, DAEmailRecipient, DAFileList, DAFile, DAObject, DAFileCollection, DAStaticFile, DADict, DAList
+from docassemble.base.util import DAEmail, DAEmailRecipientList, DAEmailRecipient, DAFileList, DAFile, DAObject, DAFileCollection, DAStaticFile, DADict, DAList, DAOrderedDict
 import docassemble.base.core  # for backward-compatibility with data pickled in earlier versions
 
 from docassemble.webapp.app_object import app, csrf
@@ -8252,7 +8252,7 @@ def index(action_argument=None, refer=None):
                     continue
                 try:
                     the_table_list = eval(tableName, user_dict)
-                    assert isinstance(the_table_list, DAList)
+                    assert isinstance(the_table_list, (DAList, DAOrderedDict))
                 except:
                     error_messages.append(("error", "Error: Invalid table: " + str(tableName)))
                     continue
