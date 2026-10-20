@@ -36,7 +36,9 @@ Final acceptance run `accept-clean-20261020T130737Z`:
 - Zero leftover disposable containers and zero `da-*` volumes.
 - Image `da-uv-24-qual:local` = `sha256:dfce538a21af9f22…01341`, built from
   revision `89eddac69`; linux/arm64, CPython **3.12.14**, uv **0.12.21**
-  (`aarch64-unknown-linux-musl`). Replacement pair `da-uv-24-old:local`
+  (`aarch64-unknown-linux-musl`). That 3.12.14 is the uv-managed *managed runtime*
+  interpreter; it differs from the repository image's 3.14 serving path — see the
+  Python-target divergence under Boundaries. Replacement pair `da-uv-24-old:local`
   `4b4d982bf0d8` (RELEASE 1.10.12) / `da-uv-24-new:local` `59eae89710d6` (1.10.16).
 - Longest phases: `restore-azure` 2246 s, `restore-s3` 2195 s,
   `cloud-checkpoint` 1676 s, `helpers_mail` 1395 s, `image-migration` 1091 s.
@@ -109,6 +111,29 @@ recorded as reporting debt; they are neither repaired nor hidden in this ticket.
 No wording in this record asserts five successful captures or an
 unconditional all-green result.
 
+**Python-target divergence (recorded 2026-10-20 after operator correction):** the
+managed runtime qualified here is a uv-managed **CPython 3.12.14** venv (`local3.12`)
+served by the executor's own `gunicorn` (`webapp.py` uses
+`runtime_venv/bin/gunicorn`). The repository image moved to Python 3.14 in
+`b6533949f` on 2026-05-02, an ancestor of this revision, and serves through
+`mod_wsgi.so-3.14` from `local3.14`; the experiment's first commit is 2026-10-02 and
+`uv-experiment/README.md:129` still declares the 3.12.14 target. Upstream
+docassemble 1.10.x supports both interpreters (1.9.9 moved the image to 3.14 and most
+3.14 defects were fixed by 1.9.12), so this is a **qualification-scope gap, not a
+product defect** — but **no 3.14 behaviour was exercised by any phase**, and this
+acceptance does not extend to the 3.14 deployment path.
+
+The 3.12 assumption is structural rather than a pin: `image_baseline.py:79` writes
+`'target': {'python': '3.12'}`, and `installation.py:512`, `private_index.py:91`,
+`registry_builder.py:51` and `managed_qualification.py:25` **refuse** any baseline
+declaring another target; `paths.py:43`, `inventory.py:74,92`,
+`installation.py:708` (`UV_PYTHON`) and `registry_builder.py:284` encode the venv
+name, the `lib/python3.12/site-packages` layout and the candidate
+`requires-python = "==3.12.*"`. The qualification image therefore provisions its own
+3.12 runtime instead of the stock 3.14 install, which is why `local3.14` still holds
+the OS image's stale docassemble 1.10.7. Retargeting is ticket 25; until it passes,
+the experimental runtime remains one interpreter generation behind its own image.
+
 Other boundaries: cloud restores use the shared manifest/storage contract with
 filesystem-transport CLI fakes that inject auth-failure, partial/interrupted/
 corrupt upload, missing/changed object and overwrite-refusal behaviour; provider
@@ -127,6 +152,8 @@ network ranges and the host name, so it is never committed. The remote branch
 ## Resolution
 
 Accepted with the five limitations above recorded verbatim, the false aggregate
-gate of the first run preserved rather than rewritten, and the F4 diagnostic loss
-explicitly dispositioned. Operator walkthrough and repeatable commands:
-[`24/OPERATOR.md`](24/OPERATOR.md). Chain complete: `Next: none`.
+gate of the first run preserved rather than rewritten, the F4 diagnostic loss
+explicitly dispositioned, and the 3.12-versus-3.14 scope gap disclosed rather than
+implied away. Operator walkthrough and repeatable commands:
+[`24/OPERATOR.md`](24/OPERATOR.md). Next: 25 (retarget the managed runtime to the
+image's Python), which must re-run this matrix before any 3.14 claim.
