@@ -1,0 +1,161 @@
+debug: {{DADEBUG}}
+enable playground: {{DAENABLEPLAYGROUND}}
+allow log viewing: {{DAALLOWLOGVIEWING}}
+root owned: {{DAROOTOWNED}}
+allow demo: {{DADEBUG}}
+exitpage: https://docassemble.org
+supervisor:
+  username: {{DASUPERVISORUSERNAME}}
+  password: {{DASUPERVISORPASSWORD}}
+db:
+  prefix: {{DBPREFIX}}
+  name: {{DBNAME}}
+  user: {{DBUSER}}
+  password: {{DBPASSWORD}}
+  host: {{DBHOST}}
+  port: {{DBPORT}}
+  ssl mode: {{DBSSLMODE}}
+  ssl cert: {{DBSSLCERT}}
+  ssl key: {{DBSSLKEY}}
+  ssl root cert: {{DBSSLROOTCERT}}
+  table prefix: {{DBTABLEPREFIX}}
+  backup: {{DBBACKUP}}
+google:
+  use places api new: True
+oauth:
+  facebook:
+    enable: False
+    id: 423759825983740
+    secret: 34993a09909c0909b9000a090d09f099
+  google:
+    enable: False
+    id: 23123018240-32239fj28fj4fuhf394h3984eurhfurh.apps.googleusercontent.com
+    secret: DGE34gdgerg3GDG545tgdfRf
+  auth0:
+    enable: False
+    id: ceyd6imTYxTNmuj2CYpwH_cEhdWt93e6
+    secret: LLGEBDrrgDFDfBsFjErsdSdsntkrtAbfa4ee3ss_adfdSDFEWEsfgHTerjNsd3dD
+    domain: example.auth0.com
+    # audience_domain: example.com
+  keycloak:
+    enable: False
+    id: ceyd6imTYxTNmuj2CYpwH_cEhdWt93e6
+    secret: LLGEBDrrgDFDfBsFjErsdSdsntkrtAbfa4ee3ss_adfdSDFEWEsfgHTerjNsd3dD
+    domain: keycloak.example.com
+    realm: default
+  authentik:
+    enable: False
+    id: 29zWxVegWUEaIh75WTOAg9jUnbpAOiuc683JmL2s
+    secret: 6dg8kgi8I87xcYxaOu2LSamj7cWE4j6VxC1bPcGTIl4ddMXr3Xaq6IBLo3TupITFylydPciPLULOKxIff3LmT7FxIOmEcnAsUdQf7OG3334S4FlMzEXhGFgFOARnYcVo
+    application slug: myapplication-authentik
+    domain: myserver:9000
+    protocol: "http://"
+  zitadel:
+    enable: False
+    id: 168422810448705515@yourprojectname
+    domain: your-instance-name-edy3i2.zitadel.cloud
+  miniorange:
+    enable: False
+    id: TQBwKWUcsECMUIkCctjxLQjPFXdIsnYU
+    secret: lTUyixltiJmMMKhXYulCBrKWbFbXPrdy
+    domain: myserver.com
+  azure:
+    enable: False
+    id: e378beb1-0bfb-45bc-9b4b-604dcf640c87
+    secret: UwHEze20pzSO+lvywJOjcos3v7Kd6Y7tsaCYTG7Panc=
+  github:
+    enable: False
+    id: ba45316c5951436328bc
+    secret: 68e37cebd352f1ea36b6147cd52ff661c413f4b1
+secretkey: {{DASECRETKEY}}
+backup days: {{DABACKUPDAYS}}
+default title: docassemble
+default short title: doc
+mail:
+  username: null
+  password: null
+  server: localhost
+  default sender: '"Administrator" <no-reply@example.com>'
+server administrator email: {{SERVERADMIN}}
+default interview: docassemble.base:data/questions/default-interview.yml
+language: en
+locale: en_US.utf8
+os locale: {{LOCALE}}
+timezone: {{TIMEZONE}}
+redis: {{REDIS}}
+rabbitmq: {{RABBITMQ}}
+celery processes: {{DACELERYWORKERS}}
+max celery processes: {{DAMAXCELERYWORKERS}}
+voicerss:
+  enable: False
+  key: ae8734983948ebc98239e9898f998432
+  dialects:
+    en: us
+    es: mx
+    fr: fr
+s3:
+  enable: {{S3ENABLE}}
+  access key id: {{S3ACCESSKEY}}
+  secret access key: {{S3SECRETACCESSKEY}}
+  bucket: {{S3BUCKET}}
+  region: {{S3REGION}}
+  endpoint url: {{S3ENDPOINTURL}}
+  server side encryption:
+    algorithm: {{S3_SSE_ALGORITHM}}
+    customer algorithm: {{S3_SSE_CUSTOMER_ALGORITHM}}
+    customer key: {{S3_SSE_CUSTOMER_KEY}}
+    KMS key ID: {{S3_SSE_KMS_KEY_ID}}
+azure:
+  enable: {{AZUREENABLE}}
+  account name: {{AZUREACCOUNTNAME}}
+  account key: {{AZUREACCOUNTKEY}}
+  container: {{AZURECONTAINER}}
+collect statistics: {{COLLECTSTATISTICS}}
+kubernetes: {{KUBERNETES}}
+ec2: {{EC2}}
+log server: {{LOGSERVER}}
+use cloud urls: {{USECLOUDURLS}}
+use minio: {{USEMINIO}}
+use https: {{USEHTTPS}}
+use lets encrypt: {{USELETSENCRYPT}}
+lets encrypt email: {{LETSENCRYPTEMAIL}}
+behind https load balancer: {{BEHINDHTTPSLOADBALANCER}}
+xsendfile: {{XSENDFILE}}
+update on start: {{DAUPDATEONSTART}}
+allow updates: {{DAALLOWUPDATES}}
+allow configuration editing: {{DAALLOWCONFIGURATIONEDITING}}
+url root: {{URLROOT}}
+external hostname: {{DAHOSTNAME}}
+expose websockets: {{DAEXPOSEWEBSOCKETS}}
+websockets ip: {{DAWEBSOCKETSIP}}
+websockets port: {{DAWEBSOCKETSPORT}}
+root: {{POSTURLROOT}}
+words:
+  - docassemble.base:data/sources/us-words.yml
+allow non-idempotent questions: False
+restrict input variables: True
+web server: {{DAWEBSERVER}}
+new markdown to docx: True
+new template markdown behavior: True
+stable version: {{DASTABLEVERSION}}
+sql ping: {{DASQLPING}}
+default icons: font awesome
+config from: {{CONFIGFROM}}
+enable unoconv: {{ENABLEUNOCONV}}
+gotenberg:
+  enable: {{GOTENBERGENABLE}}
+  url: {{GOTENBERGURL}}
+  username: {{GOTENBERGUSERNAME}}
+  password: {{GOTENBERGPASSWORD}}
+javascript defer: True
+use nginx to serve files: {{USENGINXTOSERVEFILES}}
+enable api: True
+enable daglobal: True
+enable email server: True
+enable faxing: True
+enable json storage: True
+enable monitor: True
+enable object storage: True
+enable sms interface: True
+enable training: True
+enable tts: True

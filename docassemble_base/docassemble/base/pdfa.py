@@ -1,0 +1,16 @@
+import tempfile
+import subprocess
+import shutil
+from docassemble.base.error import DAError
+
+
+def pdf_to_pdfa(filename):
+    outfile = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    directory = tempfile.mkdtemp(prefix='SavedFile')
+    commands = ['gs', '-dPDFA=2', '-dBATCH', '-dNOPAUSE', '-sColorConversionStrategy=CMYK', '-sProcessColorModel=DeviceCMYK', '-sDEVICE=pdfwrite', '-dPDFACompatibilityPolicy=1', '-sOutputFile=' + outfile.name, filename]
+    try:
+        output = subprocess.check_output(commands, cwd=directory, stderr=subprocess.STDOUT).decode()
+    except subprocess.CalledProcessError as err:
+        output = err.output.decode()
+        raise DAError("pdf_to_pdfa: error running ghostscript.  " + output)
+    shutil.move(outfile.name, filename)

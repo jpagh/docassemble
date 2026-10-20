@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools==83.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docassemble-sentinel-fixture"
+version = "1.0.0"
+description = "Fixture user package with observable import/execution sentinels."
+requires-python = ">=3.12"
+dependencies = [
+  "docassemble.base==1.10.13",
+]
+
+[tool.setuptools]
+packages = ["docassemble.sentinel_fixture", "docassemble.sentinel_fixture.interview_probe"]
+
+[tool.setuptools.package-data]
+"docassemble.sentinel_fixture" = ["data/questions/*.yml"]
+"docassemble.sentinel_fixture.interview_probe" = ["data/questions/*.yml"]

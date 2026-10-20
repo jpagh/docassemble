@@ -1,0 +1,12 @@
+# Disposable qualified schedules only. No anacron/replay or certbot/control jobs.
+SHELL=/bin/sh
+PATH=/usr/share/docassemble/executor-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+DA_UV_MANAGED=true
+DA_CONFIG_FILE=/usr/share/docassemble/config/config.yml
+DA_RUNTIME_VENV=/usr/share/docassemble/local3.12
+DA_MANAGED_STATE_DIR=/var/lib/docassemble/managed
+MAILTO=""
+17 * * * * root /etc/cron.hourly/docassemble >> /usr/share/docassemble/log/managed-schedules.log 2>&1
+25 6 * * * root /etc/cron.daily/docassemble >> /usr/share/docassemble/log/managed-schedules.log 2>&1
+47 6 * * 7 root /etc/cron.weekly/docassemble >> /usr/share/docassemble/log/managed-schedules.log 2>&1
+52 6 1 * * root /etc/cron.monthly/docassemble >> /usr/share/docassemble/log/managed-schedules.log 2>&1

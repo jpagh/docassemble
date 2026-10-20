@@ -1,0 +1,19 @@
+[project]
+name = "docassemble-core-bundle"
+version = "0.0.0"
+description = "Retained core-only recovery bundle for the uv environment proof."
+requires-python = "==3.12.*"
+dependencies = [
+  "docassemble.base",
+  "docassemble.demo",
+  "docassemble.webapp",
+  "gunicorn==23.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+"docassemble.base" = { path = "sources/docassemble_base" }
+"docassemble.demo" = { path = "sources/docassemble_demo" }
+"docassemble.webapp" = { path = "sources/docassemble_webapp" }

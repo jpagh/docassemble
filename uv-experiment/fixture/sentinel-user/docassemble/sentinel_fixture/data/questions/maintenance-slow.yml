@@ -1,0 +1,12 @@
+---
+mandatory: true
+code: |
+  import time
+  from pathlib import Path
+  Path('/tmp/da-maintenance-request-started').touch()
+  time.sleep(8)
+  Path('/tmp/da-maintenance-request-completed').touch()
+---
+mandatory: true
+question: |
+  Accepted maintenance fixture work completed

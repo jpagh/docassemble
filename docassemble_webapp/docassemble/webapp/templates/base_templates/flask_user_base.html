@@ -1,0 +1,14 @@
+{%- set userclass = True %}
+{%- extends "base_templates/base.html" %}
+{%- block main %}
+      <div class="row">
+        <div class="{{ config['GRID_CLASSES_USER'] }}">
+          {%- if version_warning and current_user.has_roles(['admin', 'developer']) %}
+          <div class="alert alert-danger">
+            {{ version_warning }}
+          </div>
+          {%- endif %}
+          {% block content %}{% endblock %}
+        </div>
+      </div>
+{%- endblock %}

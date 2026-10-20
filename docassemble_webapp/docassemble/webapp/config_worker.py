@@ -1,0 +1,21 @@
+# pylint: disable=invalid-name
+from docassemble.webapp.config import daconfig
+
+broker_heartbeat = 30
+task_serializer = 'pickle'
+accept_content = ['pickle']
+result_serializer = 'pickle'
+result_expires = int(daconfig.get('celery result retention days', 1)*86400)
+timezone = daconfig.get('timezone', 'America/New_York')
+enable_utc = True
+broker_connection_retry = True
+broker_connection_retry_on_startup = True
+worker_cancel_long_running_tasks_on_connection_loss = True
+
+if daconfig.get('has_celery_single_queue', False):
+    task_routes = {"tasks.ocr_page": {"queue": "single"}}
+else:
+    task_routes = {}
+task_routes.update(daconfig.get('celery task routes', None) or {})
+if 'celery processes' in daconfig:
+    worker_concurrency = daconfig['celery processes']

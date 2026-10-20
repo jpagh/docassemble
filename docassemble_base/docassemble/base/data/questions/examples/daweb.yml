@@ -1,0 +1,36 @@
+metadata:
+  title: DAWeb
+  short: DAWeb
+  documentation: "https://docassemble.org/docs/objects.html#DAWeb"
+  example start: 1
+  example end: 4
+---
+objects:
+  - web: DAWeb.using(base_url='https://api.spacexdata.com/latest')
+---
+code: |
+  launch_info = web.get('launches/latest')
+---
+code: |
+  rocket_info = web.get('rockets/' + launch_info['rocket'])
+---
+code: |
+  ship_info = web.get('ships',
+                      data={'ship_type': 'Tug'})
+---
+mandatory: True
+question: |
+  SpaceX information
+subquestion: |
+  The latest SpaceX launch involved a
+  ${ rocket_info['name'] }.
+
+  % if len(rocket_info['flickr_images']):
+  [FILE ${ rocket_info['flickr_images'][0] }]
+  
+  % endif
+  SpaceX operates the following tug boats:
+
+  % for item in ship_info:
+  * ${ item['name'] }
+  % endfor

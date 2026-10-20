@@ -1,0 +1,49 @@
+[project]
+name = "docassemble-executor"
+version = "0.1.0"
+description = "Image-built lifecycle executor for the uv-managed docassemble experiment."
+requires-python = "==3.12.*"
+dependencies = [
+  "PyYAML==6.0.3",
+  "packaging==25.0",
+  "tomli-w==1.2.0",
+  "psycopg2-binary==2.9.12",
+  "sqlalchemy==2.0.43",
+]
+
+[project.scripts]
+da-executor = "docassemble_executor.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/docassemble_executor"]
+
+# Ship only the dependency-free package namespace and shared schema, not runtime code.
+[tool.hatch.build.targets.wheel.force-include]
+"../../docassemble_base/docassemble/base/managed_preparation.py" = "docassemble/base/managed_preparation.py"
+"../../docassemble_base/docassemble/base/managed_config.py" = "docassemble/base/managed_config.py"
+"../../docassemble_base/docassemble/base/managed_git.py" = "docassemble/base/managed_git.py"
+"../../docassemble_base/docassemble/base/managed_direct.py" = "docassemble/base/managed_direct.py"
+"../../docassemble_base/docassemble/base/managed_artifacts.py" = "docassemble/base/managed_artifacts.py"
+"../../docassemble_base/docassemble/base/managed_records.py" = "docassemble/base/managed_records.py"
+"../../docassemble_base/docassemble/base/managed_qualification.py" = "docassemble/base/managed_qualification.py"
+"../../docassemble_base/docassemble/base/managed_release.py" = "docassemble/base/managed_release.py"
+"../../docassemble_base/docassemble/base/managed_rollback.py" = "docassemble/base/managed_rollback.py"
+
+"../../docassemble_base/docassemble/base/managed_migration.py" = "docassemble/base/managed_migration.py"
+"../../docassemble_base/docassemble/base/managed_adoption.py" = "docassemble/base/managed_adoption.py"
+"../../docassemble_base/docassemble/base/managed_publication.py" = "docassemble/base/managed_publication.py"
+"../../docassemble_base/docassemble/base/managed_checkpoint.py" = "docassemble/base/managed_checkpoint.py"
+
+[dependency-groups]
+dev = [
+  "alembic==1.16.5",
+  "pytest==8.4.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["../../docassemble_base"]

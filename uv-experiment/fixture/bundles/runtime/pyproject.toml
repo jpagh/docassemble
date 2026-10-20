@@ -1,0 +1,23 @@
+[project]
+name = "docassemble-runtime-bundle"
+version = "0.0.0"
+description = "Combined core + fixture user packages at runtime revision r1."
+requires-python = "==3.12.*"
+dependencies = [
+  "docassemble.base",
+  "docassemble.demo",
+  "docassemble.webapp",
+  "gunicorn==23.0.0",
+  "docassemble-sentinel-fixture",
+  "sentinel-preloaded-fixture",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+"docassemble.base" = { path = "sources/docassemble_base" }
+"docassemble.demo" = { path = "sources/docassemble_demo" }
+"docassemble.webapp" = { path = "sources/docassemble_webapp" }
+"docassemble-sentinel-fixture" = { path = "sources/sentinel-user" }
+"sentinel-preloaded-fixture" = { path = "sources/sentinel-preloaded" }

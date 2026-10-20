@@ -1,0 +1,13 @@
+{
+  "CONTAINERROLE": "all",
+  "DAWEBSERVER": "none",
+  "DAREADONLYFILESYSTEM": "false",
+  "DABACKUPDAYS": "14",
+  "BACKUPFILESTORAGE": "true",
+  "DBTYPE": "postgresql",
+  "REDIS": "redis://localhost",
+  "S3ENABLE": "false",
+  "AZUREENABLE": "false",
+  "USEHTTPS": "false",
+  "USELETSENCRYPT": "false"
+}

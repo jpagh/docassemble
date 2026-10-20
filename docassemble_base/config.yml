@@ -1,0 +1,111 @@
+debug: True
+enable playground: True
+allow log viewing: True
+allow demo: True
+exitpage: https://docassemble.org
+db:
+  prefix: postgresql+psycopg2://
+  name: docassemble
+  user: docassemble
+  password: abc123
+  host: localhost
+  port: Null
+  table_prefix: Null
+google:
+  use places api new: True
+oauth:
+  facebook:
+    enable: False
+    id: 423759825983740
+    secret: 34993a09909c0909b9000a090d09f099
+  google:
+    enable: False
+    id: 23123018240-32239fj28fj4fuhf394h3984eurhfurh.apps.googleusercontent.com
+    secret: DGE34gdgerg3GDG545tgdfRf
+  auth0:
+    enable: False
+    id: ceyd6imTYxTNmuj2CYpwH_cEhdWt93e6
+    secret: LLGEBDrrgDFDfBsFjErsdSdsntkrtAbfa4ee3ss_adfdSDFEWEsfgHTerjNsd3dD
+    domain: example.auth0.com
+    # audience_domain: example.com
+  keycloak:
+    enable: False
+    id: ceyd6imTYxTNmuj2CYpwH_cEhdWt93e6
+    secret: LLGEBDrrgDFDfBsFjErsdSdsntkrtAbfa4ee3ss_adfdSDFEWEsfgHTerjNsd3dD
+    domain: keycloak.example.com
+    realm: default
+  authentik:
+    enable: False
+    id: 29zWxVegWUEaIh75WTOAg9jUnbpAOiuc683JmL2s
+    secret: 6dg8kgi8I87xcYxaOu2LSamj7cWE4j6VxC1bPcGTIl4ddMXr3Xaq6IBLo3TupITFylydPciPLULOKxIff3LmT7FxIOmEcnAsUdQf7OG3334S4FlMzEXhGFgFOARnYcVo
+    application slug: myapplication-authentik
+    domain: myserver:9000
+    protocol: "http://"
+  azure:
+    enable: False
+    id: e378beb1-0bfb-45bc-9b4b-604dcf640c87
+    secret: UwHEze20pzSO+lvywJOjcos3v7Kd6Y7tsaCYTG7Panc=
+secretkey: 28asflwjeifwlfjsd2fejfiefw3g4o87
+backup days: 14
+default title: docassemble
+default short title: doc
+mail:
+  username: Null
+  password: Null
+  server: localhost
+  default sender: '"Administrator" <no-reply@example.com>'
+server administrator email: support@example.com
+default interview: docassemble.base:data/questions/default-interview.yml
+language: en
+locale: en_US.utf8
+voicerss:
+  enable: False
+  key: ae8734983948ebc98239e9898f998432
+  dialects:
+    en: us
+    es: mx
+    fr: fr
+s3:
+  enable: False
+  access key id: FWIEJFIJIDGISEJFWOEF
+  secret access key: RGERG34eeeg3agwetTR0+wewWAWEFererNRERERG
+  bucket: yourbucketname
+  server side encryption:
+    algorithm: null
+    customer algorithm: null
+    customer key: null
+    KMS key ID: null
+azure:
+  enable: False
+  account name: example-com
+  account key: 1TGSCr2P2uSw9/CLoucfNIAEFcqakAC7kiVwJsKLX65X3yugWwnNFRgQRfRHtenGVcc5KujusYUNnXXGXruDCA==
+  container: yourcontainername
+ec2: False
+log server: Null
+use https: False
+use lets encrypt: False
+lets encrypt email: Null
+behind https load balancer: False
+url root: http://localhost
+external hostname: Null
+root: /
+words:
+  - docassemble.base:data/sources/us-words.yml
+allow non-idempotent questions: False
+new markdown to docx: True
+new template markdown behavior: True
+enable unoconv: True
+allow configuration editing: True
+javascript defer: True
+use nginx to serve files: True
+restrict input variables: True
+enable api: True
+enable daglobal: True
+enable email server: True
+enable faxing: True
+enable json storage: True
+enable monitor: True
+enable object storage: True
+enable sms interface: True
+enable training: True
+enable tts: True

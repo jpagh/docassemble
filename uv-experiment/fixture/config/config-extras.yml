@@ -1,0 +1,19 @@
+# Fixture settings layered onto the rendered docassemble configuration.
+#
+# These are deliberately left in place during restricted recovery: the proof
+# must show that recovery does not execute them, not that removing them makes
+# startup succeed.
+preloaded modules:
+  - docassemble.sentinel_fixture.hook_sentinel
+  - sentinel_preloaded_fixture
+preloaded interviews:
+  - docassemble.sentinel_fixture.interview_probe.questions:data/questions/sentinel.yml
+favicon: sentinel_favicon_fixture:data/static/favicon
+ready file: /var/run/docassemble/ready
+# These tasks run on the real application workers, with a real Redis broker.
+celery modules:
+  - docassemble.sentinel_fixture.broker_tasks
+celery processes: 1
+# Use the real admitted UNO service, never the obsolete unoconv executable.
+enable unoconv: true
+unoconv path: /not-installed/legacy-unoconv

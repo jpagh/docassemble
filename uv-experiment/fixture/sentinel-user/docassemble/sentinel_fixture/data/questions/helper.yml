@@ -1,0 +1,36 @@
+---
+modules:
+  - docassemble.sentinel_fixture.helper_work
+---
+initial: true
+code: |
+  allow_cron = True
+  multi_user = True
+---
+event: cron_hourly
+code: |
+  record_work('hourly')
+  background_response()
+---
+event: cron_daily
+code: |
+  record_work('daily')
+  background_response()
+---
+event: cron_weekly
+code: |
+  record_work('weekly')
+  background_response()
+---
+event: cron_monthly
+code: |
+  record_work('monthly')
+  background_response()
+---
+event: incoming_email
+code: |
+  record_work('incoming-email')
+  background_response()
+---
+mandatory: true
+question: Helper proof interview

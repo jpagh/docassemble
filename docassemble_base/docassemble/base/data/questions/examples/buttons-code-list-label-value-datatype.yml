@@ -1,0 +1,26 @@
+metadata:
+  title: Buttons defined with code using label and value
+  short title: Buttons code
+  documentation: "https://docassemble.org/docs/fields.html#code button"
+---
+field: target_variable
+question: |
+  Your use of this system does not
+  mean that you have a lawyer.  Do
+  you understand this?
+datatype: boolean
+buttons:
+  code: |
+    [{'label': "I understand",
+      'value': True,
+      'css class': 'good',
+      'color': 'success'},
+     {'label': "I do not understand",
+      'value': False,
+      'css class': 'clueless',
+      'color': 'danger'}]
+---
+question: Result of question
+subquestion: |
+  target_variable is: `${ repr(target_variable) }`
+mandatory: True

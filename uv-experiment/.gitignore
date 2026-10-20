@@ -1,0 +1,24 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+evidence/run-*/
+evidence/boot-*/
+evidence/ticket-03-build.log
+backup/evidence/run-*/
+maintenance/evidence/*
+!maintenance/evidence/accepted/
+consumers/evidence/*
+!consumers/evidence/accepted/
+workers/evidence/*
+!workers/evidence/accepted/
+service-sessions/evidence/*
+!service-sessions/evidence/accepted/
+helpers-mail/evidence/*
+!helpers-mail/evidence/accepted/
+bypasses/evidence/*
+!bypasses/evidence/accepted/
+full-maintenance/evidence/*
+!full-maintenance/evidence/accepted/
+# The repository ignores all pyproject.toml files; these are proof inputs.
+!**/pyproject.toml

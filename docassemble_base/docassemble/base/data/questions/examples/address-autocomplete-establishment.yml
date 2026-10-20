@@ -1,0 +1,182 @@
+metadata:
+  title: Address autocomplete on establishments
+  short title: Test autocomplete
+  example start: 2
+  example end: 2
+  documentation: "https://docassemble.org/docs/objects.html#address autocomplete"
+---
+objects:
+  - the_address: Address
+---
+question: |
+  Enter the name of a business.
+fields:
+  - name: the_address.name
+    required: False
+    address autocomplete:
+      types:
+        - establishment
+      fields:
+        - accessibility_options
+        - address_components
+        - adr_format_address
+        - business_status
+        - display_name
+        - display_name_language_code
+        - formatted_address
+        - google_maps_links
+        - id
+        - international_phone_number
+        - location
+        - national_phone_number
+        - plus_code
+        - price_level
+        - primary_type
+        - primary_type_display_name
+        - primary_type_display_name_language_code
+        - rating
+        - types
+        - utc_offset_minutes
+  - note: |
+      The following attribute names are Google Places `addressComponents`.
+  - "administrative_area_&#8203;level_1": the_address.administrative_area_level_1
+    required: False
+  - "administrative_area_&#8203;level_2": the_address.administrative_area_level_2
+    required: False
+  - "administrative_area_&#8203;level_3": the_address.administrative_area_level_3
+    required: False
+  - "administrative_area_&#8203;level_4": the_address.administrative_area_level_4
+    required: False
+  - "administrative_area_&#8203;level_5": the_address.administrative_area_level_5
+    required: False
+  - "administrative_area_&#8203;level_6": the_address.administrative_area_level_6
+    required: False
+  - "administrative_area_&#8203;level_7": the_address.administrative_area_level_7
+    required: False
+  - colloquial_area: the_address.colloquial_area
+    required: False
+  - country: the_address.country
+    required: False
+  - floor: the_address.floor
+    required: False
+  - intersection: the_address.intersection
+    required: False
+  - locality: the_address.locality
+    required: False
+  - neighborhood: the_address.neighborhood
+    required: False
+  - post_box: the_address.post_box
+    required: False
+  - postal_code: the_address.postal_code
+    required: False
+  - postal_code_prefix: the_address.postal_code_prefix
+    required: False
+  - postal_code_suffix: the_address.postal_code_suffix
+    required: False
+  - postal_town: the_address.postal_town
+    required: False
+  - premise: the_address.premise
+    required: False
+  - room: the_address.room
+    required: False
+  - route: the_address.route
+    required: False
+  - suite: the_address.suite
+    required: False
+  - street_number: the_address.street_number
+    required: False
+  - sublocality: the_address.sublocality
+    required: False
+  - sublocality_level_1: the_address.sublocality_level_1
+    required: False
+  - sublocality_level_2: the_address.sublocality_level_2
+    required: False
+  - sublocality_level_3: the_address.sublocality_level_3
+    required: False
+  - sublocality_level_4: the_address.sublocality_level_4
+    required: False
+  - sublocality_level_5: the_address.sublocality_level_5
+    required: False
+  - subpremise: the_address.subpremise
+    required: False
+  - note: |
+      The following attribute names are Google Places fields other
+      than `addressComponents`. Note that some are HTML and some are
+      JSON, so they require `datatype: raw`.
+  - "has_wheelchair_&#8203;accessible_entrance": the_address.has_wheelchair_accessible_entrance
+    required: False
+  - "has_wheelchair_&#8203;accessible_parking": the_address.has_wheelchair_accessible_parking
+    required: False
+  - "has_wheelchair_&#8203;accessible_restroom": the_address.has_wheelchair_accessible_restroom
+    required: False
+  - "has_wheelchair_&#8203;accessible_seating": the_address.has_wheelchair_accessible_seating
+    required: False
+  - adr_format_address: the_address.adr_format_address
+    datatype: raw
+    required: False
+  - business_status: the_address.business_status
+    required: False
+  - display_name: the_address.display_name
+    required: False
+  - "display_name_&#8203;language_code": the_address.display_name_language_code
+    required: False
+  - formatted_address: the_address.formatted_address
+    required: False
+  - directions_uri: the_address.directions_uri
+    required: False
+  - photos_uri: the_address.photos_uri
+    required: False
+  - place_uri: the_address.place_uri
+    required: False
+  - reviews_uri: the_address.reviews_uri
+    required: False
+  - write_a_review_uri: the_address.write_a_review_uri
+    required: False
+  - id: the_address.id
+    required: False
+  - "international_&#8203;phone_number": the_address.international_phone_number
+    required: False
+  - "national_&#8203;phone_number": the_address.national_phone_number
+    required: False
+  - compound_code: the_address.compound_code
+    required: False
+  - global_code: the_address.global_code
+    required: False
+  - price_level: the_address.price_level
+    required: False
+  - primary_type: the_address.primary_type
+    required: False
+  - "primary_type_&#8203;display_name": the_address.primary_type_display_name
+    required: False
+  - "primary_type_&#8203;display_name_language_code": the_address.primary_type_display_name_language_code
+    required: False
+  - rating: the_address.rating
+    required: False
+  - types: the_address.types
+    required: False
+    datatype: raw
+  - utc_offset_minutes: the_address.utc_offset_minutes
+    required: False
+  - note: |
+      The following attribute names are built in to **docassemble**.
+      They have different names than Google Places field names. The
+      `latitude` and `longitude` fields come from the Google Places
+      `location` field.
+  - address: the_address.address
+    required: False
+  - unit: the_address.unit
+    required: False
+  - city: the_address.city
+    required: False
+  - state: the_address.state
+    required: False
+  - zip: the_address.zip
+    required: False
+  - latitude: the_address.latitude
+    required: False
+  - longitude: the_address.longitude
+    required: False
+---
+mandatory: True
+question: |
+  The city is ${ the_address.city }.

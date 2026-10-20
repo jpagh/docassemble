@@ -1,0 +1,14 @@
+{% extends 'flask_user/public_base.html' %}
+
+{% block content %}
+{% from "base_templates/form_macros.html" import render_field, render_submit_field %}
+
+<h1>Create package</h1>
+
+<form action="" method="POST" role="form">
+  {{ form.hidden_tag() }}
+  {{ render_field(form.name) }}
+  {{ render_submit_field(form.submit, data={'disable-button': 0}) }}
+</form>
+
+{% endblock %}

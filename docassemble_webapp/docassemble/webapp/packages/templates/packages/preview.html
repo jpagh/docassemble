@@ -1,0 +1,122 @@
+<!doctype html>
+<title>Registry preparation preview</title>
+<h1>Registry preparation preview</h1>
+<p>Public PyPI only. Preparation changes neither desired intent nor the running environment.
+{% if image_bridge %}Experimental image bridge: approval requests installation, not success.
+Only normally verified running status indicates application. Uncertain retry remains unsupported.
+{% else %}Approval, retry and installation are not supported.{% endif %}</p>
+<form id="prepare">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Registry requirement <input name="requirement" required maxlength="4096"></label>
+  {% if current_user.has_role('admin') and not image_bridge %}
+  <label><input type="checkbox" name="assign_owner" value="true"> Explicitly assign this existing ownerless managed package to me (shown in preview)</label>
+  {% endif %}
+  <label><input type="checkbox" name="pre_change_checkpoint" value="true"> Capture a full local pre-change checkpoint (adds capture/verification time in maintenance; retained until operator pruning)</label>
+  <button>Prepare preview</button>
+</form>
+<button id="refresh" disabled>Refresh status</button>
+<button id="cancel" disabled>Cancel preparation</button>
+{% if image_bridge %}<button id="approve" disabled>Approve exact preview and request installation</button>
+<label><input id="database-ack" type="checkbox"> I acknowledge that package rollback leaves the database unchanged.</label>
+<button id="retry" disabled>Retry confirmed pre-mutation abort</button>{% endif %}
+<p>Preview includes desired-relative and verified-runtime-relative changes. Unknown,
+core-only and development-override runtime states have no exact runtime diff.
+Stale or expired results are not shown as current previews.</p>
+<pre id="status" aria-live="polite"></pre>
+{% if current_user.has_role('admin') %}
+<form id="upgrade">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Registry core upgrade
+    <select name="release_mode">
+      <option value="latest-stable">latest stable</option>
+      <option value="exact">exact version (stable)</option>
+      <option value="prerelease">explicit prerelease</option>
+    </select>
+  </label>
+  <label>Version (required for exact/prerelease) <input name="release_version" maxlength="128"></label>
+  <label><input type="checkbox" name="pre_change_checkpoint" value="true"> Capture a full local pre-change checkpoint (adds capture/verification time in maintenance; retained until operator pruning)</label>
+  <button>Prepare upgrade preview</button>
+</form>
+<p>A coherent upgrade is preview only: it resolves one exact newer registry
+release and freshly solves the core then the current requirements. It changes
+neither desired intent nor the running environment until explicit approval.
+Package rollback does not restore database data. Checkpoints require enabled local
+backups and complete local files. Full restore is a separate operator/executor action
+that loses later data changes; external side effects (such as sent email) are not undone.</p>
+<form id="rollback">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Retained historical revision <input name="rollback_revision" required></label>
+  <label>Explicitly assign restored ownerless interactive packages to me (comma-separated normalized names)
+    <input name="assign_owners"></label>
+  <button>Prepare exact historical rollback preview</button>
+</form>
+<p>Rollback restores the recorded historical user requirements and core without solving.
+Current grants/accounts are preserved; YAML and unrelated settings are not restored.
+Unknown advanced schemas are unproven; readiness checks cannot prove full data compatibility.</p>
+{% endif %}
+<script>
+const form = document.getElementById('prepare');
+const statusBox = document.getElementById('status');
+let candidate, resultDigest, revision, approvalKey;
+async function show(response) {
+  const data = await response.json();
+  statusBox.textContent = JSON.stringify(data, null, 2);
+  if (data.id && data.id !== candidate) {
+    candidate = data.id;
+    revision = undefined;
+    approvalKey = crypto.randomUUID();
+  }
+  if (data.revision_id) revision = data.revision_id;
+  resultDigest = data.result_digest;
+  document.getElementById('refresh').disabled = !candidate && !revision;
+  document.getElementById('cancel').disabled = !candidate || !!revision;
+  if (document.getElementById('approve')) document.getElementById('approve').disabled = !data.approval_supported;
+  if (document.getElementById('retry')) document.getElementById('retry').disabled = !data.retry_supported;
+}
+form.onsubmit = async (event) => {
+  event.preventDefault();
+  const body = new FormData(form);
+  body.set('idempotency_key', crypto.randomUUID());
+  await show(await fetch(location.pathname, {method: 'POST', body}));
+};
+document.getElementById('refresh').onclick = async () => {
+  await show(await fetch(location.pathname + (revision ? '?revision_id=' + encodeURIComponent(revision) : '?candidate_id=' + encodeURIComponent(candidate))));
+};
+document.getElementById('cancel').onclick = async () => {
+  const body = new FormData(form);
+  body.set('action', 'cancel');
+  body.set('candidate_id', candidate);
+  await show(await fetch(location.pathname, {method: 'POST', body}));
+};
+for (const action of ['approve', 'retry']) {
+  const button = document.getElementById(action);
+  if (button) button.onclick = async () => {
+    const body = new FormData(form);
+    body.set('action', action);
+    body.set('acknowledge_database_unchanged', document.getElementById('database-ack').checked ? 'true' : 'false');
+    body.set('candidate_id', candidate);
+    body.set('result_digest', resultDigest);
+    body.set('revision_id', revision);
+    body.set('idempotency_key', action === 'approve' ? approvalKey : crypto.randomUUID());
+    await show(await fetch(location.pathname, {method: 'POST', body}));
+  };
+}
+const upgrade = document.getElementById('upgrade');
+if (upgrade) upgrade.onsubmit = async (event) => {
+  event.preventDefault();
+  const body = new FormData(upgrade);
+  body.set('operation', 'upgrade');
+  body.set('idempotency_key', crypto.randomUUID());
+  await show(await fetch(location.pathname, {method: 'POST', body}));
+};
+const rollback = document.getElementById('rollback');
+if (rollback) rollback.onsubmit = async (event) => {
+  event.preventDefault();
+  const body = new FormData(rollback);
+  body.set('operation', 'rollback');
+  body.set('idempotency_key', crypto.randomUUID());
+  const acknowledgement = document.getElementById('database-ack');
+  if (acknowledgement) acknowledgement.checked = false;
+  await show(await fetch(location.pathname, {method: 'POST', body}));
+};
+</script>

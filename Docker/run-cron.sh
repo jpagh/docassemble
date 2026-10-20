@@ -1,0 +1,22 @@
+#! /bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/managed-consumer.sh" cron "${1:-cron_daily}" || exit 75
+
+export DA_ROOT="${DA_ROOT:-/usr/share/docassemble}"
+export DA_DEFAULT_LOCAL="local3.14"
+
+export DA_ACTIVATE="${DA_PYTHON:-${DA_ROOT}/${DA_DEFAULT_LOCAL}}/bin/activate"
+
+source "${DA_ACTIVATE}"
+
+export HOME=/var/www
+export CRONTYPE=${1:-cron_daily}
+
+export DA_CONFIG_FILE="${DA_CONFIG:-${DA_ROOT}/config/config.yml}"
+source /dev/stdin < <(su -c "source \"$DA_ACTIVATE\" && python -m docassemble.base.read_config \"$DA_CONFIG_FILE\"" www-data)
+
+set -- $LOCALE
+export LANG=$1
+
+export IN_CRON=true
+
+exec nice -n 19 su -c "source \"$DA_ACTIVATE\" && flask --app docassemble.webapp.server cron run $CRONTYPE" www-data

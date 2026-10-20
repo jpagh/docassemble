@@ -1,0 +1,26 @@
+# do not pre-load
+import re
+from googleapiclient.discovery import build
+from docassemble.base.util import log, get_config
+
+__all__ = ['translate_phrase']
+
+
+def translate_phrase(phrase, source_language, target_language):
+    try:
+        api_key = get_config('google')['api key']
+    except:
+        log("Could not translate because Google API key was not in Configuration.")
+        return phrase
+    try:
+        service = build('translate', 'v2',
+                        developerKey=api_key)
+        resp = service.translations().list(  # pylint: disable=no-member
+            source=source_language,
+            target=target_language,
+            q=[phrase]
+        ).execute()
+        return re.sub(r'&#39;', r"'", str(resp['translations'][0]['translatedText']))
+    except BaseException as err:
+        log("translation failed: " + err.__class__.__name__ + ": " + str(err))
+        return phrase

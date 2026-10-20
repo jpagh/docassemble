@@ -1,0 +1,461 @@
+import re
+import email.utils
+from wtforms import (
+    DateField,
+    StringField,
+    SubmitField,
+    ValidationError,
+    BooleanField,
+    SelectField,
+    SelectMultipleField,
+    HiddenField,
+    validators,
+    TextAreaField,
+)
+from wtforms.validators import DataRequired, Email, Optional
+from wtforms.widgets import PasswordInput
+from flask import flash, current_app, request, abort
+from flask_login import current_user
+from flask_wtf import FlaskForm
+from sqlalchemy import select
+from docassemble_flask_user.forms import (
+    RegisterForm,
+    LoginForm,
+    password_validator,
+    unique_email_validator,
+)
+from docassemble.base.managed import managed_installation
+from docassemble.webapp.database import dbtableprefix
+from docassemble.webapp.users.managed import lock_authority
+from docassemble.base.language.words import LazyWord as word, word as non_lazy_word
+from docassemble.base.generate_key import random_alphanumeric
+from docassemble.webapp.config import BAN_IP_ADDRESSES, daconfig
+from docassemble.webapp.daredis import r
+from docassemble.webapp.extensions import db
+from docassemble.webapp.users.models import UserModel, Role
+from docassemble.webapp.utils.logger import logmessage
+from docassemble.webapp.utils.request import get_requester_ip
+from docassemble.webapp.services.validators import html_validator
+
+
+class LazyArray:
+
+    def __init__(self, array):
+        self.original = array
+
+    def compute(self):
+        return [non_lazy_word(item) for item in self.original]
+
+    def copy(self):
+        return self.compute().copy()
+
+    def pop(self, *pargs):
+        return str(self.original.pop(*pargs))
+
+    def __add__(self, other):
+        return self.compute() + other
+
+    def index(self, *pargs, **kwargs):
+        return self.compute().index(*pargs, **kwargs)
+
+    def clear(self):
+        self.original = []
+
+    def append(self, other):
+        self.original.append(other)
+
+    def remove(self, other):
+        self.original.remove(other)
+
+    def extend(self, other):
+        self.original.extend(other)
+
+    def __contains__(self, item):
+        return self.compute().__contains__(item)
+
+    def __iter__(self):
+        return self.compute().__iter__()
+
+    def __len__(self):
+        return self.compute().__len__()
+
+    def __delitem__(self, index):
+        self.original.__delitem__(index)
+
+    def __reversed__(self):
+        return self.compute().__reversed__()
+
+    def __setitem__(self, index, the_value):
+        return self.original.__setitem__(index, the_value)
+
+    def __getitem__(self, index):
+        return self.compute()[index]
+
+    def __str__(self):
+        return str(self.compute())
+
+    def __repr__(self):
+        return repr(self.compute())
+
+    def __eq__(self, other):
+        return self.original == other
+
+try:
+    import ldap
+    import ldap.filter
+except ImportError:
+    if 'ldap login' not in daconfig:
+        daconfig['ldap login'] = {}
+    daconfig['ldap login']['enable'] = False
+
+
+def fix_nickname(form, field):
+    field.data = str(form.first_name.data) + ' ' + str(form.last_name.data)
+
+
+class MySignInForm(LoginForm):
+
+    def ldap_bind(self, connect):
+        base_dn = daconfig['ldap login']['base dn'].strip()
+        if daconfig['ldap login'].get('anonymous bind', False):
+            bind_dn = ""
+            bind_password = ""
+        else:
+            bind_dn = daconfig['ldap login']['bind dn'].strip()
+            bind_password = daconfig['ldap login']['bind password'].strip()
+
+        username = ""
+        password = ""
+        try:
+            search_filter = daconfig['ldap login'].get('search pattern',
+                                                       "mail=%s") % (self.email.data)
+            connect.simple_bind_s(bind_dn, bind_password)
+            search_results = connect.search_s(base_dn,
+                                              ldap.SCOPE_SUBTREE, search_filter)
+            if len(search_results) == 0:
+                logmessage(("Email %s was not found in LDAP "
+                            "using search filter %s, base dn %s") %
+                           (self.email.data, search_filter, base_dn))
+            else:
+                if len(search_results) > 1:
+                    logmessage(("Email %s was found multiple times in LDAP "
+                                "using search filter %s, base dn %s "
+                                "- the first result will be used as dn: %s") %
+                               (self.email.data, search_filter, base_dn, search_results[0][0]))
+                username = search_results[0][0]
+                password = self.password.data
+        except (ldap.LDAPError, ldap.INVALID_CREDENTIALS):
+            # no unbind to make use of the rest of the LDAP workflow
+            logmessage(("Could not login into LDAP with email %s "
+                        "and given password") %
+                       (self.email.data))
+
+        return username, password
+
+    def validate(self):
+        if BAN_IP_ADDRESSES:
+            key = 'da:failedlogin:ip:' + str(get_requester_ip(request))
+            failed_attempts = r.get(key)
+            if failed_attempts is not None and int(failed_attempts) > daconfig['attempt limit']:
+                abort(404)
+        ldap_server = daconfig['ldap login'].get('server', 'localhost').strip()
+        if daconfig['ldap login'].get('enable', False):
+            if daconfig['ldap login'].get('ldap over TLS', False):
+                ldap_protocol = "ldaps"
+            else:
+                ldap_protocol = "ldap"
+            connect = ldap.initialize(ldap_protocol + '://' + ldap_server)
+
+            if daconfig['ldap login'].get('login with bind_dn', False):
+                username, password = self.ldap_bind(connect)
+            else:
+                username = self.email.data
+                password = self.password.data
+
+            connect.set_option(ldap.OPT_REFERRALS, 0)
+            try:
+                connect.simple_bind_s(username, password)
+                if connect.whoami_s() is not None:
+                    connect.unbind_s()
+                    user_manager = current_app.user_manager
+                    if managed_installation():
+                        lock_authority(db.session.connection(), dbtableprefix)
+                        db.session.expire_all()
+                    user, user_email = user_manager.find_user_by_email(self.email.data)  # pylint: disable=unused-variable
+                    if not user:
+                        while True:
+                            new_social = 'ldap$' + random_alphanumeric(32)
+                            existing_user = db.session.execute(select(UserModel).filter_by(social_id=new_social)).scalar()
+                            if existing_user:
+                                continue
+                            break
+                        user = UserModel(social_id=new_social, email=self.email.data, nickname='', active=True)
+                        user_role = db.session.execute(select(Role).filter_by(name='user')).scalar_one()
+                        user.roles.append(user_role)
+                        db.session.add(user)
+                        db.session.commit()
+                    result = True
+                else:
+                    connect.unbind_s()
+                    try:
+                        result = super().validate()
+                    except:
+                        result = False
+            except (ldap.LDAPError, ldap.INVALID_CREDENTIALS):
+                connect.unbind_s()
+                try:
+                    result = super().validate()
+                except:
+                    result = False
+        else:
+            user_manager = current_app.user_manager
+            user, user_email = user_manager.find_user_by_email(self.email.data)
+            if user is None:
+                if daconfig.get('confirm registration', False) or not daconfig.get('allow registration', False):
+                    self.email.errors = []
+                    self.email.errors.append(word("Incorrect Email and/or Password"))
+                    self.password.errors = []
+                    self.password.errors.append(word("Incorrect Email and/or Password"))
+                else:
+                    self.email.errors = list(self.email.errors)
+                    self.email.errors.append(word("Account did not exist."))
+                return False
+            if user and (user.password is None or (user.social_id is not None and not user.social_id.startswith('local$'))):
+                self.email.errors = list(self.email.errors)
+                if user.social_id.startswith('google$'):
+                    self.email.errors.append(word("You need to log in with Google."))
+                elif user.social_id.startswith('azure$'):
+                    self.email.errors.append(word("You need to log in with Azure."))
+                elif user.social_id.startswith('auth0$'):
+                    self.email.errors.append(word("You need to log in with Auth0."))
+                elif user.social_id.startswith('keycloak$'):
+                    self.email.errors.append(word("You need to log in with Keycloak."))
+                elif user.social_id.startswith('authentik$'):
+                    self.email.errors.append(word("You need to log in with Authentik."))
+                elif user.social_id.startswith('facebook$'):
+                    self.email.errors.append(word("You need to log in with Facebook."))
+                else:
+                    self.email.errors.append(word("You cannot log in this way."))
+                return False
+            if self.password.data == 'password':
+                pipe = r.pipeline()
+                pipe.set('da:insecure_password_present', '1')
+                pipe.expire('da:insecure_password_present', 60)
+                pipe.execute()
+            # logmessage("Trying super validate")
+            result = super().validate()
+            # logmessage("Super validate response was " + repr(result))
+        if BAN_IP_ADDRESSES:
+            if result is False:
+                r.incr(key)
+                r.expire(key, daconfig['ban period'])
+            elif failed_attempts is not None:
+                r.delete(key)
+        return result
+
+
+def da_unique_email_validator(form, field):
+    if daconfig['ldap login'].get('enable', False) and daconfig['ldap login'].get('base dn', None) is not None and daconfig['ldap login'].get('bind email', None) is not None and daconfig['ldap login'].get('bind password', None) is not None:
+        ldap_server = daconfig['ldap login'].get('server', 'localhost').strip()
+        base_dn = daconfig['ldap login']['base dn'].strip()
+        search_filter = daconfig['ldap login'].get('search pattern', "mail=%s") % (ldap.filter.escape_filter_chars(form.email.data),)
+        connect = ldap.initialize('ldap://' + ldap_server)
+        try:
+            connect.simple_bind_s(daconfig['ldap login']['bind email'], daconfig['ldap login']['bind password'])
+            if len(connect.search_s(base_dn, ldap.SCOPE_SUBTREE, search_filter)) > 0:
+                raise ValidationError(word("This Email is already in use. Please try another one."))
+        except ldap.LDAPError:
+            pass
+    if daconfig.get('confirm registration', False):
+        return True
+    return unique_email_validator(form, field)
+
+
+def da_registration_restrict_validator(form, field):  # pylint: disable=unused-argument
+    if len(daconfig['authorized registration domains']) == 0:
+        return True
+    user_email = str(form.email.data).lower().strip()
+    for domain in daconfig['authorized registration domains']:
+        if user_email.endswith(domain):
+            return True
+    errors = list(form.email.errors)
+    errors.append(word('E-mail addresses with this domain are not authorized to register for accounts on this system.'))
+    form.email.errors = tuple(errors)
+    return False
+
+
+class MyRegisterForm(RegisterForm):
+    first_name = StringField(word('First name'), [validators.Length(min=0, max=255), html_validator])
+    last_name = StringField(word('Last name'), [validators.Length(min=0, max=255), html_validator])
+    country = StringField(word('Country code'), [validators.Length(min=0, max=2), html_validator])
+    subdivisionfirst = StringField(word('First subdivision'), [validators.Length(min=0, max=64), html_validator])
+    subdivisionsecond = StringField(word('Second subdivision'), [validators.Length(min=0, max=64), html_validator])
+    subdivisionthird = StringField(word('Third subdivision'), [validators.Length(min=0, max=64), html_validator])
+    organization = StringField(word('Organization'), [validators.Length(min=0, max=64), html_validator])
+    language = StringField(word('Language'), [validators.Length(min=0, max=64), html_validator])
+    timezone = SelectField(word('Time Zone'), [validators.Length(min=0, max=64), html_validator])
+    nickname = StringField(word('Nickname'), [fix_nickname, html_validator])
+    email = StringField(word('Email'), validators=[
+        validators.DataRequired(word('Email is required')),
+        validators.Email(word('Invalid Email')),
+        da_unique_email_validator,
+        da_registration_restrict_validator,
+        html_validator])
+
+
+def length_two(form, field):  # pylint: disable=unused-argument
+    if len(field.data) != 2:
+        raise ValidationError(word('Must be a two-letter code'))
+
+
+class NewPrivilegeForm(FlaskForm):
+    name = StringField(word('Name of new privilege'), validators=[
+        DataRequired(word('Name of new privilege is required'))])
+    submit = SubmitField(word('Add'))
+
+
+class UserProfileForm(FlaskForm):
+    first_name = StringField(word('First name'), [validators.Length(min=0, max=255), html_validator])
+    last_name = StringField(word('Last name'), [validators.Length(min=0, max=255), html_validator])
+    country = StringField(word('Country code'), [validators.Length(min=0, max=2), html_validator])
+    subdivisionfirst = StringField(word('First subdivision'), [validators.Length(min=0, max=64), html_validator])
+    subdivisionsecond = StringField(word('Second subdivision'), [validators.Length(min=0, max=64), html_validator])
+    subdivisionthird = StringField(word('Third subdivision'), [validators.Length(min=0, max=64), html_validator])
+    organization = StringField(word('Organization'), [validators.Length(min=0, max=64), html_validator])
+    language = StringField(word('Language'), [validators.Length(min=0, max=64), html_validator])
+    timezone = SelectField(word('Time Zone'), [validators.Length(min=0, max=64), html_validator])
+    pypi_username = StringField(word('PyPI Username'), [validators.Length(min=0, max=255), html_validator])
+    pypi_password = StringField(word('PyPI Password'), [validators.Length(min=0, max=255)])
+    confirmed_at = DateField(word('Confirmation Date'))
+    submit = SubmitField(word('Save'))
+    cancel = SubmitField(word('Cancel'))
+
+
+class EditUserProfileForm(UserProfileForm):
+    email = StringField(word('E-mail'), validators=[Email(word('Must be a valid e-mail address')), html_validator])
+    role_id = SelectMultipleField(word('Privileges'), coerce=int)
+    active = BooleanField(word('Active'))
+    uses_mfa = BooleanField(word('Uses two-factor authentication'))
+
+    def validate(self, user_id, admin_id):  # pylint: disable=arguments-differ
+        existing_user = db.session.execute(select(UserModel).filter_by(id=user_id)).scalar()
+        phone_user = existing_user.social_id.startswith('phone$')
+        user_manager = current_app.user_manager
+        rv = UserProfileForm.validate(self)
+        if not rv:
+            return False
+        if phone_user and self.email.data == '':
+            self.email.data = None
+        if not phone_user:
+            if not (self.email.data and self.email.data.strip()):
+                self.email.errors.append(word('E-mail is required'))
+                return False
+        if self.email.data:
+            try:
+                Email("error")(self, self.email)
+            except ValidationError:
+                self.email.errors.append(word('Must be a valid e-mail address'))
+                return False
+            user, user_email = user_manager.find_user_by_email(self.email.data)  # pylint: disable=unused-variable
+            if user is not None and user.id != user_id:
+                self.email.errors.append(word('That e-mail address is already taken.'))
+                return False
+        if current_user.id == user_id and current_user.has_roles('admin'):
+            if admin_id not in self.role_id.data:
+                self.role_id.errors.append(word('You cannot take away your own admin privilege.'))
+                return False
+            self.active.data = True
+        return True
+
+
+class PhoneUserProfileForm(UserProfileForm):
+
+    def validate(self):  # pylint: disable=arguments-differ
+        if self.email.data:
+            if current_user.social_id.startswith('phone$'):
+                existing_user = db.session.execute(select(UserModel).filter_by(email=self.email.data, active=True)).scalar()
+                if existing_user is not None and existing_user.id != current_user.id:
+                    flash(word("Please choose a different e-mail address."), 'error')
+                    return False
+        return super().validate()
+    email = StringField(word('E-mail'), validators=[Optional(), Email(word('Must be a valid e-mail address')), html_validator])
+
+
+class MyInviteForm(FlaskForm):
+
+    def validate(self):  # pylint: disable=arguments-differ
+        has_error = False
+        if self.email.data:
+            for email_address in re.split(r'[\n\r]+', self.email.data.strip()):
+                (part_one, part_two) = email.utils.parseaddr(email_address)  # pylint: disable=unused-variable
+                if part_two == '':
+                    the_errors = list(self.email.errors)
+                    the_errors.append(word("Invalid e-mail address: " + email_address))
+                    self.email.errors = tuple(the_errors)
+                    has_error = True
+        if has_error:
+            return False
+        return super().validate()
+    email = TextAreaField(word('One or more e-mail addresses (separated by newlines)'), validators=[
+        validators.InputRequired(word('At least one e-mail address must be listed'))
+    ])
+    role_id = SelectField(word('Role'))
+    next = HiddenField()
+    submit = SubmitField(word('Invite'))
+
+
+class UserAddForm(FlaskForm):
+    email = StringField(word('E-mail'), validators=[
+        validators.InputRequired(word('E-mail is required')),
+        validators.Email(word('Invalid E-mail'))])
+    first_name = StringField(word('First name'), [validators.Length(min=0, max=255), html_validator])
+    last_name = StringField(word('Last name'), [validators.Length(min=0, max=255), html_validator])
+    role_id = SelectMultipleField(word('Privileges'), coerce=int)
+    password = StringField(word('Password'), widget=PasswordInput(hide_value=False), validators=[password_validator])
+    submit = SubmitField(word('Add'))
+
+
+class MFASetupForm(FlaskForm):
+    verification_code = StringField(word('Verification code'))
+    submit = SubmitField(word('Verify'))
+
+
+class MFALoginForm(FlaskForm):
+    verification_code = StringField(word('Verification code'))
+    next = HiddenField()
+    submit = SubmitField(word('Verify'))
+
+
+class MFAReconfigureForm(FlaskForm):
+    reconfigure = SubmitField(word('Reconfigure'))
+    disable = SubmitField(word('Disable'))
+    cancel = SubmitField(word('Cancel'))
+
+
+class MFAChooseForm(FlaskForm):
+    auth = SubmitField(word('App'))
+    sms = SubmitField(word('SMS'))
+    cancel = SubmitField(word('Cancel'))
+
+
+class MFASMSSetupForm(FlaskForm):
+    phone_number = StringField(word('Phone number'), [validators.Length(min=5, max=255), html_validator])
+    submit = SubmitField(word('Verify'))
+
+
+class MFAVerifySMSSetupForm(FlaskForm):
+    verification_code = StringField(word('Verification code'))
+    submit = SubmitField(word('Verify'))
+
+
+class MyResendConfirmEmailForm(FlaskForm):
+    email = StringField(word('Your e-mail address'), validators=[
+        validators.DataRequired(word('E-mail address is required')),
+        validators.Email(word('Invalid e-mail address'))
+    ])
+    submit = SubmitField(word('Send confirmation email'))
+
+
+class ManageAccountForm(FlaskForm):
+    confirm = StringField(word('Type \"delete my account\" here to confirm that you want to delete your account.'), [validators.AnyOf(LazyArray([word("delete my account")]), message=word('Since you did not type \"delete my account\" I did not delete your account.'))])
+    delete = SubmitField(word('Delete Account'))
