@@ -211,3 +211,50 @@ def test_maintenance_credentials_cannot_select_another_cluster_or_database(opera
     with pytest.raises(ColdRestoreError, match='maintenance DB endpoint') as error:
         maintenance_url(make_url('postgresql://app@127.0.0.1:55432/application'), operator)
     assert 'SECRET' not in str(error.value)
+
+
+def test_checkpoint_foreign_rehashed_lock_is_material_refusal_before_runtime_or_schema(tmp_path, monkeypatch):
+    import pwd
+    from types import SimpleNamespace
+    from docassemble_executor import checkpoint_restore as restore, uvsync
+    from docassemble_executor.bundles import sha256_file
+    from docassemble.base.managed_python import python_target, python_requires
+    paths = ExecutorPaths.from_env()
+    directory = tmp_path / 'checkpoint'
+    baseline = {'target': python_target(), 'tool': {'uv': '0.12.21'}, 'image_baseline': {}, 'core': {}}
+    image = directory / 'database.managed/objects/image-baseline'
+    image.mkdir(parents=True)
+    (image / 'baseline.json').write_text(json.dumps({'baseline': baseline}))
+    retained = directory / 'database.managed/objects/retained' / ('a' * 64)
+    retained.mkdir(parents=True)
+    (retained / 'pyproject.toml').write_text('[project]\nname="checkpoint-target"\nversion="0"\n'
+        'requires-python=' + json.dumps(python_requires()) + '\ndependencies=[]\n[tool.uv]\npackage=false\n')
+    (retained / 'uv.lock').write_text('version=1\nrevision=3\nrequires-python="==3.12.*"\n'
+        '[[package]]\nname="checkpoint-target"\nversion="0"\nsource={virtual="."}\n')
+    (retained / 'inventory.json').write_text('{}')
+    bundle = {'digest': 'a' * 64, 'project_digest': sha256_file(retained / 'pyproject.toml'),
+              'lock_digest': sha256_file(retained / 'uv.lock'), 'inventory': {}}
+    revision = dict(baseline, publication={'result': {'bundle': bundle}})
+    monkeypatch.setenv('DA_ENVIRONMENT_USER', 'fixture')
+    monkeypatch.setattr(pwd, 'getpwnam', lambda _: SimpleNamespace(pw_dir=str(tmp_path), pw_uid=os.getuid(), pw_gid=os.getgid()))
+    monkeypatch.setattr(restore.subprocess, 'run', lambda *a, **k: SimpleNamespace(stdout=b'uv 0.12.21'))
+    monkeypatch.setattr('docassemble_executor.inventory.verify_environment', lambda *a: pytest.fail('foreign sync cannot reach inventory/schema'))
+    from unittest.mock import Mock
+    inner_sync = Mock(side_effect=AssertionError('checkpoint target refusal must precede executable consumption'))
+    monkeypatch.setattr(uvsync, '_sync_frozen', inner_sync)
+    observed = []
+    real_sync = uvsync.sync_frozen
+    def observe_refusal(*args, **kwargs):
+        result = real_sync(*args, **kwargs)
+        observed.append(result)
+        return result
+    monkeypatch.setattr(uvsync, 'sync_frozen', observe_refusal)
+    with pytest.raises(restore.RestoreMaterialError) as error:
+        restore.preflight_environment(paths, directory, revision, None, 'schema')
+    assert str(error.value) == ('checkpoint required frozen source/artifact unavailable or expired; no data replaced; '
+                                'repair retained material/access, never solve a substitute')
+    inner_sync.assert_not_called()
+    assert len(observed) == 1 and observed[0].ok is False
+    assert observed[0].output_tail == 'retained project and lock Python target mismatch'
+    # Checkpoint creates outer scratch before this call; do not claim otherwise.
+    assert not list(tmp_path.glob('checkpoint-preflight-*'))

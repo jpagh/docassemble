@@ -3,6 +3,7 @@
 Disposable fixture data only. No claim of cold-start authority (18), upstream
 credential validity, or coordinated interview-file checkpoint (21–23).
 """
+import sys
 import base64
 import hashlib
 import json
@@ -136,7 +137,7 @@ def main():
     # Pinned offline frozen sync from the restored bundle into a brand-new venv,
     # new empty cache, with no upstream or original managed store available.
     venv = ROOT / 'restored-venv'
-    run(['uv', 'venv', '--python', '/usr/share/docassemble/local3.12/bin/python', str(venv)])
+    run(['uv', 'venv', '--python', sys.executable, str(venv)])
     env = dict(os.environ, UV_PROJECT_ENVIRONMENT=str(venv), UV_CACHE_DIR=str(ROOT / 'empty-cache'), UV_NO_CACHE='1')
     run(['uv', 'sync', '--frozen', '--offline', '--no-build', '--no-install-project', '--project', str(retained / reference)], env=env)
     assert run([str(venv / 'bin/python'), '-c', 'import BackupDirect; print(BackupDirect.VALUE)']).stdout.strip() == '1'

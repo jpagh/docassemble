@@ -1,4 +1,5 @@
 """Pinned uv 0.12.21 real retained-wheel/sdist solve and cold-cache build proof."""
+from docassemble.base.managed_python import python_target
 from pathlib import Path
 import json
 import shutil
@@ -22,7 +23,7 @@ def prove(root, wheel):
     inputs = {'artifact': identity, 'requirement': {'declaration': 'zip-example[feature]==1.0'},
               'contributions': [{'id': 'config', 'origin': 'config', 'declaration': 'zip-example<2'}],
               'ownership_effects': {'owner_id': 'fixture'},
-              'baseline': {'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+              'baseline': {'target': python_target(), 'tool': {'uv': '0.12.21'},
                            'config': {'index_url': 'https://pypi.org/simple'}, 'core': {},
                            'desired_inventory': {}, 'runtime': {'kind': 'normal', 'inventory': {}}}}
     builder = RegistryBuilder(bundles, shutil.which('uv'), artifact_root=store)
@@ -81,7 +82,7 @@ def prove_transitive(root):
         contributions.append({'id': name, 'declaration': identity['normalized_name'] + '==1.0',
                               'artifact_ref': identity['digest']})
     inputs = {'requirement': {'declaration': 'zip-example==1.0'}, 'contributions': contributions,
-              'ownership_effects': {}, 'baseline': {'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+              'ownership_effects': {}, 'baseline': {'target': python_target(), 'tool': {'uv': '0.12.21'},
               'config': {'index_url': 'https://pypi.org/simple'}, 'core': {}, 'desired_inventory': {},
               'runtime': {'kind': 'normal', 'inventory': {}}}}
     try:

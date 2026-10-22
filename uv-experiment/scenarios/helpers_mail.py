@@ -21,7 +21,6 @@ from maintenance import wait
 
 NAME = 'da-uv-helper-proof'
 CONFIG = '/var/run/docassemble/managed-supervisor/supervisord.conf'
-RUNTIME = '/usr/share/docassemble/local3.12/bin/python'
 STATE = '/var/lib/docassemble/managed/'
 ROOT = '/tmp/da-helper-proof/'
 SERVICE_ROOT = '/tmp/da-service-proof/'
@@ -783,6 +782,8 @@ print('SMTP accepted')
                            'p.chmod(0o644)\n')
             cold_setup = '/usr/share/docassemble/executor-venv/bin/python -c ' + shlex.quote(script) + '; ' + cold_setup
         docker.start(NAME, args.image, env={'DA_EXIM_QUEUE_INTERVAL': '5s'}, cold_setup=cold_setup)
+        layout = docker.runtime_layout(NAME)
+        RUNTIME = layout.python
         ready()
         # 04b3 qualifies only these explicit OS entries, not the combined legacy
         # schedules, standalone duplicate backups, or certbot/control hooks.
@@ -946,11 +947,11 @@ chmod 755 /opt/trusted-backup-tools/rsync''')
         capture('accepted-mail-output-does-not-trigger-exim-kill-limit')
 
         # A genuine OS cron tick while normal service is open.
-        docker.exec_shell(NAME, '''cat > /etc/cron.d/da-helper-proof <<'EOF'
+        docker.exec_shell(NAME, f'''cat > /etc/cron.d/da-helper-proof <<'EOF'
 SHELL=/bin/sh
 DA_UV_MANAGED=true
 DA_CONFIG_FILE=/usr/share/docassemble/config/config.yml
-DA_RUNTIME_VENV=/usr/share/docassemble/local3.12
+DA_RUNTIME_VENV={shlex.quote(layout.venv)}
 DA_MANAGED_STATE_DIR=/var/lib/docassemble/managed
 * * * * * root DA_HELPER_PROOF_LABEL=os-cron DA_HELPER_PROOF_HOLD=true /etc/cron.weekly/docassemble >> /tmp/da-helper-proof/cron.log 2>&1
 EOF
@@ -1027,11 +1028,11 @@ chmod 644 /etc/cron.d/da-helper-proof''')
             before, pids = uv_log(), infra_pids()
             operation = pool.submit(apply, '100')
             wait(lambda: status()['admission']['mode'] == 'draining')
-            docker.exec_shell(NAME, '''cat > /etc/cron.d/da-helper-proof <<'EOF'
+            docker.exec_shell(NAME, f'''cat > /etc/cron.d/da-helper-proof <<'EOF'
 SHELL=/bin/sh
 DA_UV_MANAGED=true
 DA_CONFIG_FILE=/usr/share/docassemble/config/config.yml
-DA_RUNTIME_VENV=/usr/share/docassemble/local3.12
+DA_RUNTIME_VENV={shlex.quote(layout.venv)}
 DA_MANAGED_STATE_DIR=/var/lib/docassemble/managed
 * * * * * root date > /tmp/da-helper-proof/missed-tick; DA_HELPER_PROOF_LABEL=must-not-replay /etc/cron.weekly/docassemble >> /tmp/da-helper-proof/missed.log 2>&1
 EOF

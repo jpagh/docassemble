@@ -13,6 +13,7 @@ import zipfile
 import pytest
 
 from docassemble.base.managed_preparation import digest
+from docassemble.base.managed_python import python_requires
 from docassemble_executor import managed_backup
 from docassemble_executor.bundles import hash_project, sha256_file
 from docassemble_executor.image_baseline import load_image_wheels
@@ -77,7 +78,8 @@ def helper_backup(tmp_path, monkeypatch):
     paths = ExecutorPaths.from_env()
     paths.state_dir.mkdir()
     (paths.state_dir / 'lifecycle.json').write_text('{"phase":"verified"}')
-    manifest = {'identity': {}, 'bundles': {}, 'inventories': {},
+    manifest = {'identity': {'python_version': '.'.join(map(str, sys.version_info[:3]))},
+                'bundles': {}, 'inventories': {},
                 'executor_inventory': {}, 'uv_sha256': 'fixture', 'uv_binary_sha256': 'fixture'}
     for name in ('runtime-r1', 'core-r1'):
         directory = paths.bundles_dir / name
@@ -88,8 +90,10 @@ def helper_backup(tmp_path, monkeypatch):
                              'Metadata-Version: 2.1\nName: example\nVersion: 1.0\n')
             archive.writestr('example-1.0.dist-info/WHEEL',
                              'Wheel-Version: 1.0\nTag: py3-none-any\n')
-        (directory / 'pyproject.toml').write_text('[project]\nname = "fixture"\nversion = "1.0"\n')
-        (directory / 'uv.lock').write_text('[[package]]\nname = "example"\nversion = "1.0"\n'
+        (directory / 'pyproject.toml').write_text('[project]\nname = "fixture"\nversion = "1.0"\n'
+                                               'requires-python = ' + json.dumps(python_requires()) + '\n')
+        (directory / 'uv.lock').write_text('requires-python = ' + json.dumps(python_requires()) +
+                                           '\n[[package]]\nname = "example"\nversion = "1.0"\n'
                                            'source = {path = "wheels/' + wheel.name + '"}\n')
         manifest['bundles'][name] = hash_project(directory)
         manifest['inventories'][name] = {'distributions': {'example': '1.0'}}

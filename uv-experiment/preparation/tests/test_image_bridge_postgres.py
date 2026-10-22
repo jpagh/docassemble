@@ -185,3 +185,24 @@ def test_incomplete_normal_report_cannot_release_slot(bridge, missing):
     with pytest.raises(PreparationError):
         installation.report_terminal(receipt)
     assert snapshot(service) == before
+
+
+def test_configured_old_target_refuses_publication_without_approval_or_apply(bridge, tmp_path, monkeypatch):
+    import json
+    import sys
+    from docassemble.base.managed_qualification import configured_baseline
+    client, service, baseline = bridge
+    monkeypatch.setattr(sys, 'version_info', (3, 14, 4))
+    document = {'format': 1, 'baseline': dict(baseline, target={'python': '3.12'})}
+    path = tmp_path / 'baseline.json'
+    path.write_text(json.dumps(document))
+    monkeypatch.setenv('DA_QUALIFIED_IMAGE_BASELINE', str(path))
+    monkeypatch.delenv('CONTAINERROLE', raising=False)
+    before = snapshot(service), intent(service)
+    def boundary(api=False):
+        configured_baseline()
+        pytest.fail('foreign configured baseline must not create publication service')
+    monkeypatch.setattr(adapter, 'preview_service', boundary)
+    response = client.post('/preview', json={'requirement': 'Example>=2', 'idempotency_key': 'old-target'})
+    assert response.status_code == 409
+    assert (snapshot(service), intent(service)) == before

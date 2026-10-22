@@ -1,4 +1,5 @@
 """Real pinned-uv, disposable-container proof; no runtime or DB mutation."""
+from docassemble.base.managed_python import python_target
 import copy
 import json
 from pathlib import Path
@@ -26,7 +27,7 @@ def main():
         metadata = json.load(response)
     source_hash = next(v['digests']['sha256'] for v in metadata['urls'] if v['packagetype'] == 'sdist')
     core = {'packaging': {'version': '25.0', 'source_digest': source_hash}}
-    inputs = {'baseline': {'core': core, 'target': {'python': '3.12'},
+    inputs = {'baseline': {'core': core, 'target': python_target(),
               'tool': {'uv': '0.12.21'}, 'config': {'index_url': 'https://pypi.org/simple'},
               'desired_inventory': core, 'runtime': {'kind': 'normal', 'inventory': core}},
               'contributions': [], 'requirement': {'declaration': 'six==1.17.0'},

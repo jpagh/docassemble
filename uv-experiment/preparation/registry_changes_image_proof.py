@@ -1,4 +1,5 @@
 """Ticket 06 real module -> pinned uv -> normal all-role apply, fixture only."""
+from docassemble.base.managed_python import python_target, python_site_packages
 import importlib.util
 import json
 import os
@@ -44,7 +45,7 @@ def dependency_movement_build():
                                          '--upgrade-package', 'boltons==23.0.0']
             return super()._run(arguments, directory, cache, venv)
     store = STORE / 'dependency-movement'
-    inputs = {'baseline': {'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    inputs = {'baseline': {'target': python_target(), 'tool': {'uv': '0.12.21'},
               'config': {'index_url': 'https://pypi.org/simple'}, 'core': {}, 'desired_inventory': {},
               'runtime': {'kind': 'normal', 'inventory': {}}},
               'contributions': [{'id': 'unrelated', 'declaration': 'boltons>=20'},
@@ -80,8 +81,8 @@ def main():
     # runtime's dependencies. The executor wheel normally needs preparation only.
     sys.dont_write_bytecode = True
     import docassemble.base
-    docassemble.base.__path__.append(str(paths.runtime_venv / 'lib/python3.12/site-packages/docassemble/base'))
-    location = paths.runtime_venv / 'lib/python3.12/site-packages/docassemble/webapp/packages/managed.py'
+    docassemble.base.__path__.append(str(paths.runtime_venv / python_site_packages() / 'docassemble/base'))
+    location = paths.runtime_venv / python_site_packages() / 'docassemble/webapp/packages/managed.py'
     spec = importlib.util.spec_from_file_location('registry_image_adapter', location)
     adapter = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(adapter)
@@ -201,7 +202,7 @@ def main():
     def denied_sync(*args, **kwargs):
         # Deny actual package writes, not only uv's advisory lock file (some
         # repeated-sync paths can proceed without reopening that file).
-        packages = paths.runtime_venv / 'lib/python3.12/site-packages'
+        packages = paths.runtime_venv / python_site_packages()
         original = packages.stat()
         os.chown(packages, 0, 0)
         packages.chmod(0o555)

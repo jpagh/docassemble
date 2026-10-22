@@ -165,6 +165,9 @@ def test_purge_survives_real_redis_crash_restart_and_preserves_application_keys(
 
 def test_cold_restore_preserves_image_directory_metadata_and_restores_material(tmp_path):
     from docassemble_executor.cold_restore import restore_objects
+    stock = tmp_path / 'local3.14'
+    stock.mkdir(mode=0o750)
+    (stock / 'sentinel').write_bytes(b'stock unchanged')
     image = tmp_path / 'image-owned'
     image.mkdir(mode=0o755)
     baseline = image / 'baseline'
@@ -180,6 +183,8 @@ def test_cold_restore_preserves_image_directory_metadata_and_restores_material(t
                 'files': {'image-baseline/baseline.json': dict(info, source=str(baseline / 'baseline.json')),
                           'material/x': dict(info, source=str(material / 'x'))}}
     restore_objects(tmp_path, document, {'unavailable_objects': []})
+    assert (stock / 'sentinel').read_bytes() == b'stock unchanged'
+    assert stock.stat().st_mode & 0o777 == 0o750
     assert image.stat().st_mode & 0o777 == 0o755
     assert baseline.stat().st_mode & 0o777 == 0o750
     assert material.stat().st_mode & 0o777 == 0o750

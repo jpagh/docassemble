@@ -1,4 +1,5 @@
 """Source-frozen target migration, schema direction, and new-image recovery."""
+from docassemble.base.managed_python import python_requires, python_target
 import copy
 from types import SimpleNamespace
 
@@ -60,14 +61,14 @@ def test_schema_success_evidence_and_uncertainty_survive_journal_roundtrip(tmp_p
 def test_migration_builder_solves_all_declared_requirements_against_new_exact_core_and_seeds_preferences(tmp_path, monkeypatch, version):
     import docassemble_executor.registry_builder as module
     inputs = {'change_operation': 'migration', 'ownership_effects': {}, 'baseline': {
-        'core': core(version), 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+        'core': core(version), 'target': python_target(), 'tool': {'uv': '0.12.21'},
         'config': {'index_url': 'https://pypi.org/simple'}, 'image_baseline': {'image_target': 'new'},
         'desired_inventory': core('2.0'), 'runtime': {'kind': 'unknown', 'inventory': {}}},
         'contributions': [{'id': 'one', 'declaration': 'Example[extra]>=1,<3; os_name == "posix"'},
                           {'id': 'two', 'declaration': 'Example!=1.5'}]}
     monkeypatch.setattr(module.os, 'geteuid', lambda: 999)
-    monkeypatch.setattr(module.sys, 'version_info', (3, 12))
     monkeypatch.setattr(module.subprocess, 'run', lambda *a, **k: SimpleNamespace(stdout=b'uv 0.12.21'))
+    monkeypatch.setattr('docassemble_executor.image_baseline.load_image_registry_wheels', lambda *a: {})
     monkeypatch.setattr('docassemble_executor.image_baseline.load_image_wheels', lambda *_: (inputs['baseline'], {}))
     builder = RegistryBuilder(tmp_path, image_baseline=tmp_path / 'image')
     captured = []
@@ -146,6 +147,7 @@ def test_executor_replacement_archives_old_receipt_selects_new_image_recovery_an
     monkeypatch.setattr(module, 'create_engine', lambda *a, **k: engine)
     monkeypatch.setattr(module, 'load_config', lambda *_: {})
     monkeypatch.setattr('docassemble_executor.durable_work.configuration', lambda *_: ('db', ''))
+    monkeypatch.setattr('docassemble_executor.image_baseline.load_image_registry_wheels', lambda *a: {})
     monkeypatch.setattr('docassemble_executor.image_baseline.load_image_wheels', lambda *a: (target, {}))
     monkeypatch.setattr('docassemble_executor.image_baseline.verify_image_recovery_core', lambda *_: None)
     module.observe_migration(SimpleNamespace(paths=paths))
@@ -181,7 +183,7 @@ def test_installation_runtime_mutation_preserves_schema_evidence_only_for_unchan
     journal.save(paths.journal_file)
     before = journal.to_dict()
     claim = InstallationClaim('replacement', 'replacement-revision', 1, 'host', 2,
-        {'image_baseline': {'image_target': 'replacement'}, 'schema_mode': schema_mode, 'target': {'python': '3.12'},
+        {'image_baseline': {'image_target': 'replacement'}, 'schema_mode': schema_mode, 'target': python_target(),
          'publication': {'result': {'bundle': {'digest': 'a' * 64}}}})
     reports = []
     def report(receipt):
@@ -266,8 +268,10 @@ def test_seeded_migration_only_unlocks_fixed_image_core_metadata(tmp_path, monke
     store = tmp_path / 'retained'
     parent = store / 'staging'
     parent.mkdir(parents=True)
-    (parent / 'solve.lock').write_text('# parent solve preferences, not the apply lock')
-    manifest = {'solve.lock': sha256_file(parent / 'solve.lock')}
+    (parent / 'solve.lock').write_text('# parent solve preferences, not the apply lock\nrequires-python = ' + json.dumps(python_requires()))
+    (parent / 'solve-project.toml').write_text('[project]\nrequires-python = ' + json.dumps(python_requires()))
+    (parent / 'tool.json').write_text(json.dumps({'uv': '0.12.21', 'target': python_target()}))
+    manifest = {p.name: sha256_file(p) for p in parent.iterdir()}
     reference = digest(manifest)
     (parent / 'manifest.json').write_text(json.dumps(manifest))
     parent.rename(store / reference)

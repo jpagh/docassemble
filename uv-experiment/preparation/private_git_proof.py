@@ -6,6 +6,8 @@ No real credential is used and no secret is persisted in the retained bundle.
 """
 from __future__ import annotations
 
+from docassemble.base.managed_python import python_target
+
 import base64
 import http.server
 import json
@@ -139,7 +141,7 @@ class GitFixture:
 def inputs(declaration: str, authorizations: dict | None = None) -> dict:
     requirement, source, _ = parse_git_requirement(declaration)
     value = {'requirement': requirement.__dict__, 'git_source': source, 'contributions': [], 'ownership_effects': {},
-             'baseline': {'core': {}, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+             'baseline': {'core': {}, 'target': python_target(), 'tool': {'uv': '0.12.21'},
                           'config': {'index_url': 'https://pypi.org/simple'},
                           'desired_inventory': {}, 'runtime': {'kind': 'normal', 'inventory': {}}}}
     if authorizations:

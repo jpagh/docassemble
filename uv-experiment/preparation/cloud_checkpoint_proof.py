@@ -1,4 +1,5 @@
 """Ticket 22: real PG/pinned-uv capture plus external S3/Azure CLI fakes."""
+import sys
 import json
 import os
 from pathlib import Path
@@ -118,7 +119,7 @@ def with_cloud_checkpoints(engine, dump, paths, **kwargs):
                             artifact.parent.mkdir(exist_ok=True)
                             shutil.copyfile(restored / 'database.managed/objects' / name, artifact)
                     venv = sandbox / 'venv'
-                    backup.run(['uv', 'venv', '--python', '/usr/share/docassemble/local3.12/bin/python', str(venv)])
+                    backup.run(['uv', 'venv', '--python', sys.executable, str(venv)])
                     env = dict(os.environ, UV_PROJECT_ENVIRONMENT=str(venv), UV_CACHE_DIR=str(sandbox / 'empty-cache'), UV_NO_CACHE='1')
                     backup.run(['uv', 'sync', '--frozen', '--offline', '--no-build', '--no-install-project', '--project', str(project)], env=env)
                     assert backup.run([str(venv / 'bin/python'), '-c', 'import BackupDirect; print(BackupDirect.VALUE)']).stdout.strip() == '1'

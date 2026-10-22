@@ -1,4 +1,5 @@
 """Host Docker + disposable PostgreSQL proof; never a production database."""
+from docassemble.base.managed_python import python_target
 import json
 import os
 from pathlib import Path
@@ -30,7 +31,7 @@ def main():
         metadata = json.load(response)
     source_hash = next(v['digests']['sha256'] for v in metadata['urls'] if v['packagetype'] == 'sdist')
     core = {'packaging': {'version': '25.0', 'source_digest': source_hash}}
-    baseline = {'core': core, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    baseline = {'core': core, 'target': python_target(), 'tool': {'uv': '0.12.21'},
                 'config': {'index_url': 'https://pypi.org/simple'}, 'desired_inventory': core,
                 'runtime': {'kind': 'normal', 'inventory': core}}
     with engine.begin() as connection:

@@ -1,4 +1,5 @@
 """14.1/14.3 and 16.1/16.2 discriminating retained-source regressions."""
+from docassemble.base.managed_python import python_requires, python_target
 from copy import deepcopy
 
 import pytest
@@ -93,7 +94,7 @@ def test_combined_solve_cannot_rebuild_nondeterministic_frozen_core_wheel(tmp_pa
     wheel.write_bytes(b'nondeterministic-sdist-build-number-one')
     alternative = b'nondeterministic-sdist-build-number-two'
     core = {'gunicorn': {'version': '23.0.0', 'source_digest': 'a' * 64}}
-    baseline = {'core': core, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    baseline = {'core': core, 'target': python_target(), 'tool': {'uv': '0.12.21'},
                 'config': {'index_url': 'https://pypi.org/simple'}, 'desired_inventory': {},
                 'runtime': {'kind': 'normal', 'inventory': {}}}
     inputs = {'baseline': baseline, 'contributions': [], 'change_operation': 'upgrade', 'ownership_effects': {}}
@@ -104,7 +105,7 @@ def test_combined_solve_cannot_rebuild_nondeterministic_frozen_core_wheel(tmp_pa
         if args[0] == 'build':
             (project / 'wheels' / wheel.name).write_bytes(alternative)
         if args[0] == 'lock':
-            (project / 'uv.lock').write_text('[[package]]\nname="gunicorn"\nversion="23.0.0"\nsource={path="wheels/' + wheel.name + '"}\n')
+            (project / 'uv.lock').write_text('requires-python = ' + json.dumps(python_requires()) + '\n[[package]]\nname="gunicorn"\nversion="23.0.0"\nsource={path="wheels/' + wheel.name + '"}\n')
         if args[0] == 'sync':
             cache.mkdir(exist_ok=True)
             venv.mkdir(exist_ok=True)

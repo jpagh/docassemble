@@ -1,4 +1,5 @@
 """Shared core-upgrade proof source bindings; no uv subprocess or container."""
+from docassemble.base.managed_python import python_target
 import hashlib
 import importlib.util
 import json
@@ -52,7 +53,7 @@ def test_core_upgrade_image_proof_injects_fixtures_only_into_fresh_core_solve(
     core = {name: {'version': '23.0.0' if name == 'gunicorn' else '1.10.14'}
             for name in image_wheels}
     inputs = {'change_operation': 'upgrade', 'contributions': [], 'baseline': {
-        'core': core, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+        'core': core, 'target': python_target(), 'tool': {'uv': '0.12.21'},
         'config': {'index_url': 'https://pypi.org/simple'}}}
     (root / 'upgrade-inputs.json').write_text(json.dumps(inputs))
     received = []

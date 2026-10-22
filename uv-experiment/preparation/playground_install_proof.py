@@ -2,12 +2,14 @@
 
 Only disposable schemas, files and venvs are modified; no host runtime services.
 """
+from docassemble.base.managed_python import python_target
 import importlib.util
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import urllib.request
 
@@ -29,7 +31,7 @@ def main():
         metadata = json.load(response)
     core_hash = next(row['digests']['sha256'] for row in metadata['urls'] if row['packagetype'] == 'sdist')
     core = {'packaging': {'version': '25.0', 'source_digest': core_hash}}
-    baseline = {'core': core, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    baseline = {'core': core, 'target': python_target(), 'tool': {'uv': '0.12.21'},
         'config': {'index_url': 'https://pypi.org/simple'}, 'desired_inventory': core,
         'runtime': {'kind': 'normal', 'inventory': core}}
     url = os.environ['DA_PREPARATION_TEST_URL']
@@ -105,7 +107,7 @@ def main():
             env = dict(os.environ, UV_PROJECT_ENVIRONMENT=str(root / 'runtime'),
                 UV_CACHE_DIR=str(root / 'empty-cache'), UV_PYTHON_DOWNLOADS='never')
             applied = subprocess.run([uv, 'sync', '--frozen', '--no-build', '--offline', '--no-config',
-                '--python', '3.12'], cwd=bundle, env=env, text=True, capture_output=True)
+                '--python', sys.executable], cwd=bundle, env=env, text=True, capture_output=True)
             assert applied.returncode == 0, applied.stderr
             check = subprocess.check_output([str(root / 'runtime/bin/python'), '-I', '-c',
                 'import docassemble.Example, packaging; print(docassemble.Example.__version__, packaging.__version__)'],

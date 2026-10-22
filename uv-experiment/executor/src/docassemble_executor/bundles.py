@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tomllib
+
+from docassemble.base.managed_python import python_requires
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +23,17 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def verify_python_target(project_file: Path, lock_file: Path) -> bool:
+    """Refuse foreign or inconsistent locks without solving or rewriting them."""
+    try:
+        project = tomllib.loads(project_file.read_text(encoding='utf-8'))
+        lock = tomllib.loads(lock_file.read_text(encoding='utf-8'))
+        return (project['project']['requires-python'] == python_requires()
+                and lock['requires-python'] == python_requires())
+    except (OSError, ValueError, KeyError, TypeError, RecursionError):
+        return False
 
 
 def hash_project(bundle_dir: Path) -> str:

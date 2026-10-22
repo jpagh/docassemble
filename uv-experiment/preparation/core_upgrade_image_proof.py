@@ -5,6 +5,7 @@ therefore expose repacked image wheels as coherent 1.10.14/1.10.15 releases.
 Only fixture wheel inputs are injected; production selection, solving, retention,
 publication, qualification, recovery and observed-DB clearance stay real.
 """
+from docassemble.base.managed_python import python_site_packages
 import base64
 import csv
 import hashlib
@@ -133,8 +134,8 @@ def publisher_at(paths, engine, prefix):
     # Match the existing registry image proof's independent adapter loading.
     sys.dont_write_bytecode = True
     import docassemble.base
-    docassemble.base.__path__.append(str(paths.runtime_venv / 'lib/python3.12/site-packages/docassemble/base'))
-    location = paths.runtime_venv / 'lib/python3.12/site-packages/docassemble/webapp/packages/managed.py'
+    docassemble.base.__path__.append(str(paths.runtime_venv / python_site_packages() / 'docassemble/base'))
+    location = paths.runtime_venv / python_site_packages() / 'docassemble/webapp/packages/managed.py'
     spec = importlib.util.spec_from_file_location('core_upgrade_image_adapter', location)
     adapter = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(adapter)

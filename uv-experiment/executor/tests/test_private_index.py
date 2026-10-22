@@ -1,4 +1,5 @@
 """Private distribution snapshot policy and secret boundaries (real HTTPS proof separate)."""
+from docassemble.base.managed_python import python_target
 import base64
 import copy
 import json
@@ -13,7 +14,7 @@ from docassemble_executor.registry_builder import RegistryBuilder
 
 
 def inputs():
-    return {'baseline': {'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'}, 'core': {},
+    return {'baseline': {'target': python_target(), 'tool': {'uv': '0.12.21'}, 'core': {},
             'runtime': {'kind': 'normal'}, 'config': {
                 'private_indexes': {'private': 'https://example.invalid/scoped/simple/'},
                 'private_bindings': {'sample': 'private'}}},
@@ -171,7 +172,7 @@ def config_import_inputs():
         'private bindings': {'sample': 'alpha'}},
         environ={})
     return {'change_operation': 'config', 'ownership_effects': {}, 'baseline': {
-        'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'}, 'core': {},
+        'target': python_target(), 'tool': {'uv': '0.12.21'}, 'core': {},
         'runtime': {'kind': 'normal'}, 'config': {'index_url': 'https://pypi.org/simple'}},
         'config_import': {'generation': 1, 'snapshot': snapshot, 'digest': snapshot['digest']},
         'committed_contributions': [],
@@ -440,3 +441,15 @@ def test_private_index_sdist_snapshot_is_bound_hashed_and_secret_free(tmp_path, 
     assert all(request.get_header('Authorization').startswith('Basic ') for request in requests)
     assert 'DISPOSABLE_SECRET' not in (project / 'private-sources.json').read_text()
     assert '.tar.gz#sha256=' in (project / 'private-indexes/snapshot/sample/index.html').read_text()
+
+
+@pytest.mark.parametrize('target', [{'python': '3.12'}, {'python': '3.13'}, {'python': '3.14.4'},
+    {'python': '>=3.12'}, {'python': ['3.14']}, {'python': '3.14', 'extra': 'key'}, {}])
+def test_private_policy_foreign_target_refused_before_retrieval(monkeypatch, target):
+    import sys
+    from docassemble_executor.private_index import validate_private_policy
+    monkeypatch.setattr(sys, 'version_info', (3, 14, 4))
+    value = inputs()
+    value['baseline']['target'] = target
+    with pytest.raises(PreparationError):
+        validate_private_policy(value)

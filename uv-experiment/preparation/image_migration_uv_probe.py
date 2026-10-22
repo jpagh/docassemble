@@ -1,4 +1,5 @@
 """Pinned-uv same-version replacement-wheel refresh without user update-all."""
+from docassemble.base.managed_python import python_requires
 import hashlib
 import json
 import os
@@ -29,7 +30,7 @@ def main():
     (root / 'pyproject.toml').write_text('''[project]
 name="fixture"
 version="0"
-requires-python="==3.12.*"
+requires-python="TARGET_REQUIREMENT"
 dependencies=["corefixture==1.0", "userfixture>=1"]
 [tool.uv]
 package=false
@@ -38,7 +39,7 @@ corefixture={path="corefixture-1.0-py3-none-any.whl"}
 [[tool.uv.index]]
 url="file:///tmp/da19-core-wheel-probe/simple"
 default=true
-''')
+'''.replace('TARGET_REQUIREMENT', python_requires()))
     old = wheel('corefixture', 'old core bytes')
     user = wheel('userfixture', 'unchanged user bytes')
     index = root / 'simple/userfixture'

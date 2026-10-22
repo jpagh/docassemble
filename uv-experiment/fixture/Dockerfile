@@ -4,7 +4,7 @@
 # Pinned inputs:
 #   - base image by digest (--build-arg DOCASSEMBLE_OS_IMAGE=...@sha256:...)
 #   - uv 0.12.21 (the image manifest records the exact binary version)
-#   - CPython 3.12 provisioned by uv at image build
+#   - CPython 3.14.4 provisioned by uv at image build
 # The retained core-only and runtime bundles plus the executor venv are built
 # at image-build time and recorded in
 # /usr/share/docassemble/managed/bundles/manifest.json.
@@ -30,7 +30,6 @@ ENV DA_UV_MANAGED=true \
     DA_ENVIRONMENT_USER=da-environment \
     UV_PYTHON_INSTALL_DIR=/usr/share/docassemble/uv-python \
     UV_CACHE_DIR=/var/cache/docassemble/uv \
-    DA_RUNTIME_VENV=/usr/share/docassemble/local3.12 \
     DA_BUNDLE_DIR=/usr/share/docassemble/managed/bundles \
     DA_CONFIG_FILE=/usr/share/docassemble/config/config.yml \
     DA_MANAGED_STATE_DIR=/var/lib/docassemble/managed \
@@ -60,6 +59,7 @@ RUN mv /usr/share/docassemble/local3.14/bin/certbot /usr/share/docassemble/local
 COPY Docker/config/config.yml.dist /opt/docassemble-fixture/config/config.yml.dist
 COPY docassemble_webapp/docassemble.wsgi /usr/share/docassemble/webapp/docassemble.wsgi
 # Preserve the executor wheel's repository-relative shared-schema include.
+COPY docassemble_base/docassemble/base/managed_python.py /docassemble_base/docassemble/base/managed_python.py
 COPY docassemble_base/docassemble/base/managed_preparation.py /docassemble_base/docassemble/base/managed_preparation.py
 COPY docassemble_base/docassemble/base/managed_migration.py /docassemble_base/docassemble/base/managed_migration.py
 COPY docassemble_base/docassemble/base/managed_adoption.py /docassemble_base/docassemble/base/managed_adoption.py
@@ -92,7 +92,8 @@ RUN rm -f /etc/cron.d/* \
     && install -d -m 755 /etc/docassemble \
     && install -m 600 /opt/docassemble-fixture/helper-backup.json /etc/docassemble/managed-backup.json \
     && install -m 640 -g Debian-exim /opt/docassemble-fixture/helper-exim.conf /etc/exim4/exim4.conf \
-    && install -m 644 /opt/da-repo/Docker/config/exim4-filter /etc/exim4/docassemble-filter
+    && install -m 644 /opt/da-repo/Docker/config/exim4-filter /etc/exim4/docassemble-filter \
+    && /usr/share/docassemble/executor-venv/bin/python /opt/docassemble-fixture/render_runtime_helpers.py
 
 EXPOSE 80
 

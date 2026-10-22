@@ -286,7 +286,10 @@ def prepare_boot(context: Context, receipt: dict[str, Any] | None) -> str:
     ok, detail = verify_bundle(context.paths.runtime_bundle(str(revision)), context.manifest, name)
     if not ok:
         raise StartupError(detail)
-    project = tomllib.loads((context.paths.runtime_bundle(str(revision)) / 'pyproject.toml').read_text())
+    try:
+        project = tomllib.loads((context.paths.runtime_bundle(str(revision)) / 'pyproject.toml').read_text())
+    except (OSError, ValueError, RecursionError):
+        raise StartupError('retained project and lock Python target mismatch') from None
     if any(not source.get('path', '').endswith('.whl') for source in project['tool']['uv']['sources'].values()):
         raise StartupError('source-built fault fixtures are not supported for ordinary boot')
     context.journal.begin_mutation(Operation(id='boot-' + os.urandom(8).hex(), kind='frozen-boot',

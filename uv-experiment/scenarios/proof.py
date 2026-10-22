@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import re
 import subprocess
 from html import unescape
@@ -20,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from harness import ContainerHttp, Docker, Evidence, Failure, Http, check  # noqa: E402
+from harness import RuntimeLayout, ContainerHttp, Docker, Evidence, Failure, Http, check  # noqa: E402
 
 CONTAINER = "da-uv-proof"
 OFFLINE_CONTAINER = "da-uv-proof-offline"
@@ -41,7 +42,6 @@ JOURNAL = STATE_DIR + "/lifecycle.json"
 DESIRED = STATE_DIR + "/desired.json"
 APPLIED = STATE_DIR + "/applied.json"
 CREATE_TABLES_LOG = "/usr/share/docassemble/log/create-tables.log"
-VENV = "/usr/share/docassemble/local3.12"
 
 
 @dataclass
@@ -50,6 +50,7 @@ class Context:
     evidence: Evidence
     image: str
     results: list[dict] = field(default_factory=list)
+    layout: RuntimeLayout = field(init=False)
 
     def record(self, scenario: str, ok: bool, detail: str) -> None:
         self.results.append({"scenario": scenario, "ok": ok, "detail": detail})
@@ -143,12 +144,13 @@ def scenario_normal_boot(context: Context, port: int) -> Http:
     docker = context.docker
     evidence = context.evidence
     docker.start(CONTAINER, context.image, port=port)
+    context.layout = docker.runtime_layout(CONTAINER)
     http = Http("http://127.0.0.1:" + str(port))
     http.wait_for("/health_check?ready=1", timeout=1200)
     # Positive control: a real normal-mode core Celery worker, not a process
     # absence assertion against a fixture which never ran workers at all.
     docker.run(['exec', '-d', CONTAINER, 'bash', '-c',
-                'exec runuser -u www-data -- ' + VENV + '/bin/celery -A docassemble.webapp.worker '
+                'exec runuser -u www-data -- ' + shlex.quote(context.layout.venv + '/bin/celery') + ' -A docassemble.webapp.worker '
                 '-b redis://localhost:6379/1 worker --pool=solo --concurrency=1 --loglevel=INFO '
                 '> /usr/share/docassemble/log/fixture-worker.log 2>&1'])
     check(docker.wait_for_exec(CONTAINER, "grep -q ' ready.' /usr/share/docassemble/log/fixture-worker.log", timeout=120),
@@ -188,15 +190,15 @@ def scenario_normal_boot(context: Context, port: int) -> Http:
 def scenario_broken_runtime(context: Context, http: Http) -> None:
     docker = context.docker
     evidence = context.evidence
-    website_files = VENV + "/lib/python3.12/site-packages"
+    website_files = context.layout.site_packages
     docker.exec_shell(
         CONTAINER,
-        "rm -rf " + website_files + "/docassemble/webapp " + website_files + "/docassemble_webapp-*.dist-info "
+        "rm -rf " + shlex.quote(website_files + "/docassemble/webapp") + " " + shlex.quote(website_files) + "/docassemble_webapp-*.dist-info "
         + "&& rm -rf " + SENTINEL_DIR,
     )
     probe = docker.exec(
         CONTAINER,
-        [VENV + "/bin/python", "-c", "import docassemble.webapp.server"],
+        [context.layout.python, "-c", "import docassemble.webapp.server"],
         check_result=False,
         timeout=120,
     )
@@ -333,7 +335,7 @@ def scenario_repair_action(context: Context, http: Http) -> None:
     token = Http.csrf(page)
     # Keep distribution metadata intact: plain sync could incorrectly decide
     # this damaged package is already installed and do no repair at all.
-    damaged_file = VENV + '/lib/python3.12/site-packages/docassemble/webapp/startup.py'
+    damaged_file = context.layout.site_packages + '/docassemble/webapp/startup.py'
     original_hash = context.hashlib_file(CONTAINER, damaged_file)
     check(bool(original_hash), 'repair fault target is missing')
     docker.exec(CONTAINER, ['rm', damaged_file])
@@ -418,10 +420,10 @@ def scenario_incompatible_database(context: Context, http: Http) -> None:
 def scenario_offline_cache_cleared(context: Context) -> None:
     docker = context.docker
     evidence = context.evidence
-    website_files = VENV + "/lib/python3.12/site-packages"
+    website_files = context.layout.site_packages
     docker.start(
         OFFLINE_CONTAINER, OFFLINE_SNAPSHOT, network='none',
-        cold_setup="rm -rf " + website_files + "/docassemble/webapp " + website_files + "/docassemble_webapp-*.dist-info "
+        cold_setup="rm -rf " + shlex.quote(website_files + "/docassemble/webapp") + " " + shlex.quote(website_files) + "/docassemble_webapp-*.dist-info "
         + "&& rm -rf /var/cache/docassemble/uv " + SENTINEL_DIR,
     )
     container_http = ContainerHttp(docker, OFFLINE_CONTAINER)
@@ -460,10 +462,10 @@ def scenario_offline_cache_cleared(context: Context) -> None:
 def scenario_missing_material(context: Context, port: int) -> None:
     docker = context.docker
     evidence = context.evidence
-    website_files = VENV + "/lib/python3.12/site-packages"
+    website_files = context.layout.site_packages
     docker.start(
         MISSING_CONTAINER, OFFLINE_SNAPSHOT, port=port,
-        cold_setup="rm -rf " + website_files + "/docassemble/webapp " + website_files + "/docassemble_webapp-*.dist-info "
+        cold_setup="rm -rf " + shlex.quote(website_files + "/docassemble/webapp") + " " + shlex.quote(website_files) + "/docassemble_webapp-*.dist-info "
         + "&& rm -rf /usr/share/docassemble/managed/bundles/core-r1",
     )
     http = Http("http://127.0.0.1:" + str(port))

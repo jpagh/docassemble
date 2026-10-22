@@ -4,7 +4,8 @@ set -euo pipefail
 
 export PATH=/usr/share/docassemble/executor-venv/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
 export DA_CONFIG_FILE="${DA_CONFIG_FILE:-/usr/share/docassemble/config/config.yml}"
-export DA_RUNTIME_VENV="${DA_RUNTIME_VENV:-/usr/share/docassemble/local3.12}"
+DA_RUNTIME_VENV=$(/usr/share/docassemble/executor-venv/bin/python -c 'from docassemble_executor.paths import ExecutorPaths; print(ExecutorPaths.from_env().runtime_venv)')
+export DA_RUNTIME_VENV
 export DA_BUNDLE_DIR="${DA_BUNDLE_DIR:-/usr/share/docassemble/managed/bundles}"
 export DA_MANAGED_STATE_DIR="${DA_MANAGED_STATE_DIR:-/var/lib/docassemble/managed}"
 export DA_RUN_DIR="${DA_RUN_DIR:-/var/run/docassemble}"

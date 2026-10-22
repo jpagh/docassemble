@@ -1,4 +1,5 @@
 """Independent adoption source provenance and operator storage boundaries."""
+from docassemble.base.managed_python import python_site_packages
 import json
 import os
 from types import SimpleNamespace
@@ -13,7 +14,7 @@ SOURCE = {'repository': 'https://example.org/repo', 'subdirectory': None, 'decla
 
 
 def metadata(runtime, directory='example-1.dist-info', **changes):
-    path = runtime / 'lib/python3.12/site-packages' / directory
+    path = runtime / python_site_packages() / directory
     path.mkdir(parents=True)
     (path / 'METADATA').write_text('Name: Example\nVersion: 1\n')
     document = {'url': SOURCE['repository'], 'vcs_info': {'vcs': 'git', 'requested_revision': 'main', 'commit_id': 'a' * 40}}

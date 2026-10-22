@@ -7,6 +7,8 @@ tests.
 
 from __future__ import annotations
 
+from docassemble.base.managed_python import python_minor
+
 import os
 import pwd
 from dataclasses import dataclass
@@ -40,7 +42,7 @@ class ExecutorPaths:
     @classmethod
     def from_env(cls) -> "ExecutorPaths":
         da_root = _env_path("DA_ROOT", "/usr/share/docassemble")
-        runtime_venv = _env_path("DA_RUNTIME_VENV", str(da_root / "local3.12"))
+        runtime_venv = _env_path("DA_RUNTIME_VENV", str(da_root / ("managed-runtime" + python_minor())))
         bundles_dir = _env_path("DA_BUNDLE_DIR", str(da_root / "managed" / "bundles"))
         state_dir = _env_path("DA_MANAGED_STATE_DIR", "/var/lib/docassemble/managed")
         run_dir = _env_path("DA_RUN_DIR", "/var/run/docassemble")

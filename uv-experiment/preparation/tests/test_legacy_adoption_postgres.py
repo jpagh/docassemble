@@ -1,4 +1,5 @@
 """Automatic adoption, with actual PostgreSQL CAS and preserved legacy evidence."""
+from docassemble.base.managed_python import python_target
 # ruff: noqa: F811 -- explicit fixture registration.
 import hashlib
 import io
@@ -41,7 +42,7 @@ def adoption(protocol, monkeypatch):
             INSERT INTO test_package_auth VALUES (1,1,1,'owner');
             INSERT INTO test_install VALUES (1,1,'old-host','0.1');'''))
     service = LegacyAdoption(protocol.engine, 'test_')
-    service.baseline = {'core': {'core': PIN}, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    service.baseline = {'core': {'core': PIN}, 'target': python_target(), 'tool': {'uv': '0.12.21'},
         'config': {'index_url': 'https://pypi.org/simple'}}
     return service
 

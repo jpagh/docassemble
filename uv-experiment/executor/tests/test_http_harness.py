@@ -44,3 +44,25 @@ def test_proof_observes_rejected_access_without_following_redirect(website):
 def test_redirect_following_is_explicit(website):
     status, _, body = website.request("GET", "/restricted", follow=True)
     assert (status, body) == (200, "login page")
+
+
+def test_runtime_layout_comes_from_protected_container_executor_not_host(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from harness import Docker, Evidence
+    docker = Docker(Evidence(tmp_path))
+    calls = []
+    payload = {'venv': '/image/managed-runtime3.14', 'python': '/image/managed-runtime3.14/bin/python',
+               'site_packages': '/image/managed-runtime3.14/lib/python3.14/site-packages'}
+    def execute(container, command):
+        calls.append((container, command))
+        return SimpleNamespace(stdout=json.dumps(payload))
+    monkeypatch.setattr(docker, 'exec', execute)
+    monkeypatch.setattr(sys, 'version_info', (3, 10, 9))
+    layout = docker.runtime_layout('already-running')
+    assert layout.site_packages == payload['site_packages']
+    assert layout.python == payload['python']
+    assert calls[0][1][0] == '/usr/share/docassemble/executor-venv/bin/python'
+    assert 'ExecutorPaths' in calls[0][1][2] and 'python_site_packages' in calls[0][1][2]
+    assert len(calls) == 1 and not docker.owned_containers
+    assert json.loads((tmp_path / 'runtime-layout.json').read_text()) == payload

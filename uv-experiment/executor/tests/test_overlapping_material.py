@@ -1,4 +1,5 @@
 """All retained wheel payloads are valid for a multiply-owned namespace file."""
+from docassemble.base.managed_python import python_site_packages
 
 from docassemble_executor.inventory import inspect_material, verify_environment
 from test_inventory import fixture_environment
@@ -6,7 +7,7 @@ from test_inventory import fixture_environment
 
 def test_reinstall_accepts_either_image_recorded_namespace_payload(tmp_path):
     venv = fixture_environment(tmp_path)
-    site = venv / 'lib/python3.12/site-packages'
+    site = venv / python_site_packages()
     other = site / 'other-1.0.dist-info'
     other.mkdir()
     (other / 'METADATA').write_text('Name: other\nVersion: 1.0\n')

@@ -12,14 +12,19 @@ import sys
 import zipfile
 
 from packaging.utils import canonicalize_name, parse_wheel_filename
-from docassemble_executor.bundles import hash_project
+from docassemble_executor.bundles import hash_project, verify_python_target
+from docassemble_executor.paths import ExecutorPaths
 from docassemble_executor.inventory import inspect_environment, inspect_material
 
 
 def main():
     version = sys.argv[1]
     root = Path('/usr/share/docassemble/managed/bundles')
-    runtime = Path('/usr/share/docassemble/local3.12')
+    runtime = ExecutorPaths.from_env().runtime_venv
+    # Validate every inherited pair before modifying any bundle or wheel.
+    for bundle_name in ('core-r1', 'runtime-r1'):
+        directory = root / bundle_name
+        assert verify_python_target(directory / 'pyproject.toml', directory / 'uv.lock'), 'retained project and lock Python target mismatch'
     for bundle_name in ('core-r1', 'runtime-r1'):
         directory = root / bundle_name
         project = (directory / 'pyproject.toml').read_text()
@@ -63,8 +68,9 @@ def main():
             project = project.replace(wheel.name, output.name)
         (directory / 'pyproject.toml').write_text(project)
         (directory / 'uv.lock').unlink()
-        subprocess.run(['uv', 'lock', '--offline', '--no-config'], cwd=directory, check=True)
-        subprocess.run(['uv', 'sync', '--frozen', '--offline', '--no-build', '--no-config'], cwd=directory,
+        subprocess.run(['uv', 'lock', '--offline', '--no-config', '--python', sys.executable], cwd=directory, check=True)
+        assert verify_python_target(directory / 'pyproject.toml', directory / 'uv.lock'), 'retained project and lock Python target mismatch'
+        subprocess.run(['uv', 'sync', '--frozen', '--offline', '--no-build', '--no-config', '--python', sys.executable], cwd=directory,
             env=dict(os.environ, UV_PROJECT_ENVIRONMENT=str(runtime)), check=True)
         (directory / 'inventory.json').write_text(json.dumps({'distributions': inspect_environment(runtime),
             'files': inspect_material(runtime)}, sort_keys=True))

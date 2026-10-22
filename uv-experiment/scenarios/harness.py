@@ -16,6 +16,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class RuntimeLayout:
+    venv: str
+    python: str
+    site_packages: str
 
 
 class Failure(Exception):
@@ -99,6 +107,22 @@ class Docker:
 
     def exec_shell(self, name: str, script: str, timeout: int = 900, check_result: bool = True):
         return self.exec(name, ["bash", "-lc", script], timeout=timeout, check_result=check_result)
+
+    def runtime_layout(self, container: str) -> RuntimeLayout:
+        """Observe protected tooling before damage, never run the runtime Python."""
+        script = ('import json; from docassemble_executor.paths import ExecutorPaths; '
+                  'from docassemble.base.managed_python import python_site_packages; '
+                  'p=ExecutorPaths.from_env().runtime_venv; '
+                  'print(json.dumps({"venv": str(p), "python": str(p / "bin/python"), '
+                  '"site_packages": str(p / python_site_packages())}))')
+        payload = json.loads(self.exec(container, [
+            '/usr/share/docassemble/executor-venv/bin/python', '-c', script]).stdout)
+        layout = RuntimeLayout(**payload)
+        check(all(isinstance(value, str) and Path(value).is_absolute()
+                  for value in (layout.venv, layout.python, layout.site_packages)),
+              'container runtime layout is invalid')
+        self.evidence.write_json('runtime-layout.json', payload)
+        return layout
 
     def restart(self, name: str, timeout: int = 120):
         self.run(["restart", name], timeout=timeout)

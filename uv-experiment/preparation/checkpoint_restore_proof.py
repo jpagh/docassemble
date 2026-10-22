@@ -13,6 +13,7 @@ from sqlalchemy.engine import URL
 
 import core_upgrade_image_proof as core
 from image_bridge_proof import database, STORE, DESCRIPTOR, run
+from cold_restore_proof import fingerprint_image_owned, assert_image_owned_unchanged
 from docassemble_executor.authority import MutationLock, RuntimeLock
 from docassemble_executor.boot_observation import installation_host_id
 from docassemble_executor.checkpoints import capture, verify_checkpoint
@@ -266,6 +267,9 @@ def main(action):
                  'r._admin=drop_then_die; '
                  'raise SystemExit(r.main(' + repr(restore_arguments) + '))')
         crash_command = [sys.executable, '-c', crash]
+        # The driver already copied and verified the image bridge. Snapshot after
+        # that provisioning, immediately before the first destructive restore.
+        image_before = fingerprint_image_owned(paths)
         killed = subprocess.run(crash_command, env=restore_env, capture_output=True, text=True)
         for secret in (restore_env['DA_RESTORE_DATABASE_URL'], operator, url.password, operator_url.password):
             if secret:
@@ -294,6 +298,7 @@ def main(action):
         record = json.loads((paths.state_dir / 'checkpoint-restore.json').read_text())
         from docassemble_executor.checkpoint_restore import _admin, _quoted
         _admin(operator_url, 'DROP DATABASE IF EXISTS ' + _quoted(interrupted['staging_database']) + ' WITH (FORCE)')
+        (BACKUP / 'image-owned.json').write_text(json.dumps(assert_image_owned_unchanged(paths, image_before)))
         assert record['state'] == 'inputs-restored'
         assert _broker_command(broker, 'EXISTS', *broker_keys()) == '0'
         assert _broker_command(broker, 'GET', 'da23-application-state') == 'keep-unrelated-state'
@@ -337,6 +342,7 @@ def main(action):
         print('PASS explicit independent full restore: actual PostgreSQL/files/grants rewind, pending work/candidate fenced; real empty-cache pinned-uv preflight; no old runtime', flush=True)
         return
     if action == 'verify':
+        assert fingerprint_image_owned(paths) == json.loads((BACKUP / 'image-owned.json').read_text()), 'runtime rebuild changed protected material'
         engine, prefix = database()
         installation = Installation(engine, lambda *_: False, prefix)
         status = json.loads(paths.status_file.read_text())

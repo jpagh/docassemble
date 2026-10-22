@@ -1,10 +1,12 @@
 ARG PROOF_BASE_IMAGE=da-uv-16:local
 FROM ${PROOF_BASE_IMAGE}
 ARG RELEASE
-COPY uv-experiment/executor/src/docassemble_executor /usr/share/docassemble/executor-venv/lib/python3.12/site-packages/docassemble_executor
-COPY docassemble_base/docassemble/base/managed*.py /usr/share/docassemble/executor-venv/lib/python3.12/site-packages/docassemble/base/
+COPY uv-experiment/executor/src/docassemble_executor /ticket/executor/docassemble_executor
 COPY docassemble_base/docassemble/base/managed*.py /ticket/base/
 COPY docassemble_webapp/docassemble/webapp/packages/managed.py /ticket/webapp/packages/managed.py
 COPY docassemble_webapp/docassemble/webapp/recovery.py docassemble_webapp/docassemble/webapp/recovery_status.py /ticket/webapp/
 COPY uv-experiment/fixture/replacement-image-build.py /ticket/build.py
-RUN PYTHONDONTWRITEBYTECODE=1 /usr/share/docassemble/executor-venv/bin/python /ticket/build.py "$RELEASE"
+COPY uv-experiment/fixture/helper-crontab uv-experiment/fixture/helper-exim.conf uv-experiment/fixture/render_runtime_helpers.py /opt/docassemble-fixture/
+RUN PYTHONDONTWRITEBYTECODE=1 /usr/share/docassemble/executor-venv/bin/python -c 'from pathlib import Path; import shutil, sysconfig; site=Path(sysconfig.get_path("purelib")); shutil.copytree("/ticket/executor/docassemble_executor", site / "docassemble_executor", dirs_exist_ok=True); shutil.copytree("/ticket/base", site / "docassemble/base", dirs_exist_ok=True)' \
+    && PYTHONDONTWRITEBYTECODE=1 /usr/share/docassemble/executor-venv/bin/python /ticket/build.py "$RELEASE" \
+    && /usr/share/docassemble/executor-venv/bin/python /opt/docassemble-fixture/render_runtime_helpers.py

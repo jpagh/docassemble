@@ -12,7 +12,6 @@ from maintenance import wait
 
 NAME = 'da-uv-service-proof'
 CONFIG = '/var/run/docassemble/managed-supervisor/supervisord.conf'
-RUNTIME = '/usr/share/docassemble/local3.12/bin/python'
 ROOT = '/tmp/da-service-proof/'
 SERVICES = ('websockets', 'nltk', 'conversion')
 
@@ -106,6 +105,8 @@ def main():
         docker.start(NAME, args.image, cold_setup='mkdir -p /tmp/da-service-proof; chmod 777 /tmp/da-service-proof; '
                      'cp /opt/docassemble-fixture/service_probe_hooks.py /opt/docassemble-executor/src/sitecustomize.py; '
                      'export PYTHONPATH=/opt/docassemble-executor/src')
+        layout = docker.runtime_layout(NAME)
+        RUNTIME = layout.python
         wait(lambda: http.status('/health_check?ready=1') == 200, 900)
         qualification = status()['consumer_qualification']
         check(qualification['complete'] is True and set(SERVICES) <= set(qualification['enabled'])

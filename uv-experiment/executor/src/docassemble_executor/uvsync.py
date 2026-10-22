@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import shutil
 import pwd
 import tempfile
@@ -12,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .authority import RuntimeLock, guarded_popen, mutation_fd
+from .bundles import verify_python_target
 
 
 @dataclass
@@ -41,6 +43,7 @@ def build_sync_env(venv: Path, cache_dir: Path, extra: dict[str, str] | None = N
     env.pop("VIRTUAL_ENV_PROMPT", None)
     env["UV_PROJECT_ENVIRONMENT"] = str(venv)
     env["UV_CACHE_DIR"] = str(cache_dir)
+    env["UV_PYTHON"] = sys.executable
     env["UV_PYTHON_DOWNLOADS"] = "never"
     env["UV_NO_PROGRESS"] = "1"
     env["CONTAINERROLE"] = ":all:"
@@ -71,6 +74,9 @@ def sync_frozen(
     the venv may be partially mutated and the journal is left at
     ``mutation_started``.
     """
+    if not verify_python_target(bundle_dir / 'pyproject.toml', bundle_dir / 'uv.lock'):
+        return SyncResult(False, build_sync_command(bundle_dir, uv_binary), None, 0.0,
+                          output_tail='retained project and lock Python target mismatch')
     user = os.environ.get('DA_ENVIRONMENT_USER') if os.geteuid() == 0 else None
     if os.geteuid() == 0 and not user:
         raise ValueError('root sync requires a dedicated DA_ENVIRONMENT_USER')

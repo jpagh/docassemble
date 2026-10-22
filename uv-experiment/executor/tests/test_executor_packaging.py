@@ -1,5 +1,6 @@
 """Build the executor in the fixture Docker COPY layout, not the source tree."""
 import os
+import sys
 from pathlib import Path
 import shutil
 import subprocess
@@ -33,6 +34,7 @@ def test_fixture_copy_layout_wheel_and_isolated_import(tmp_path):
                           'docassemble_base/docassemble/base/managed_direct.py',
                           'docassemble_base/docassemble/base/managed_artifacts.py',
                           'docassemble_base/docassemble/base/managed_qualification.py',
+                          'docassemble_base/docassemble/base/managed_python.py',
                           'docassemble_base'):
             continue
         target = root / destination.lstrip('/')
@@ -52,12 +54,14 @@ def test_fixture_copy_layout_wheel_and_isolated_import(tmp_path):
     subprocess.run([uv, 'build', '--wheel', '--out-dir', str(wheels), str(project)],
                    check=True, env=env, cwd=tmp_path)
     venv = tmp_path / 'isolated'
-    subprocess.run([uv, 'venv', '--python', '3.12', str(venv)], check=True, env=env)
+    subprocess.run([uv, 'venv', '--python', sys.executable, str(venv)], check=True, env=env)
     python = venv / 'bin/python'
     subprocess.run([uv, 'pip', 'install', '--python', str(python),
                     str(next(wheels.glob('*.whl')))], check=True, env=env)
     subprocess.run([str(python), '-I', '-c',
                     'from docassemble_executor.preparation import Preparation; '
+                    'from docassemble.base.managed_python import python_target; '
+                    'assert python_target()["python"] == ".".join(map(str, __import__("sys").version_info[:2])); '
                     'from docassemble.base.managed_records import preparation_tables; '
                     'from docassemble.base.managed_config import dependency_snapshot; '
                     'from docassemble.base.managed_artifacts import verify_artifact; '

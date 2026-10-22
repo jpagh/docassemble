@@ -1,4 +1,5 @@
 """HTTPS Git declarations, immutable ref selection, scoped credentials and builder identity."""
+from docassemble.base.managed_python import python_target
 from copy import deepcopy
 import base64
 import json
@@ -26,7 +27,7 @@ def inputs(declaration=DECLARATION):
     requirement, source, _ = parse_git_requirement(declaration)
     return {'requirement': requirement.__dict__, 'git_source': source, 'contributions': [],
         'ownership_effects': {}, 'baseline': {'core': {}, 'config': {'index_url': 'https://pypi.org/simple'},
-            'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+            'target': python_target(), 'tool': {'uv': '0.12.21'},
             'desired_inventory': {}, 'runtime': {'kind': 'normal', 'inventory': {}}}}
 
 
@@ -354,7 +355,6 @@ def test_registry_builder_git_pinned_wheel_with_complete_constraints(monkeypatch
                              {'id': 'replaced', 'declaration': DECLARATION.replace('@main', '@old')}]
     data['replace_git_contributions'] = ['replaced']
     monkeypatch.setattr(module.os, 'geteuid', lambda: 1000)
-    monkeypatch.setattr(module.sys, 'version_info', (3, 12))
     monkeypatch.setattr(module.subprocess, 'run', lambda *args, **kwargs: SimpleNamespace(stdout=b'uv 0.12.21'))
     monkeypatch.setattr(module, 'resolve_sources', lambda *args, **kwargs: {'example-pkg': recorded()})
     def wheels(sources, work, project, build, **kwargs):

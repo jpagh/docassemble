@@ -1,4 +1,5 @@
 """Proof orchestration safety using fake Docker only; never run a container."""
+from docassemble.base.managed_python import python_site_packages
 import hashlib
 import importlib.util
 import json
@@ -17,6 +18,7 @@ def load(name, monkeypatch):
     monkeypatch.syspath_prepend(str(EXPERIMENT))
     spec = importlib.util.spec_from_file_location(name.replace('-', '_'), EXPERIMENT / (name + '.py'))
     module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
     spec.loader.exec_module(module)
     return module
 
@@ -52,8 +54,16 @@ class FakeDocker:
                 self.containers.add(argv[argv.index('--name') + 1])
         elif argv[:2] == ['docker', 'cp']:
             code = int(self.fail_export)
+            if not code and argv[2].endswith(':/etc/docassemble/qualified-image'):
+                exported = Path(argv[-1])
+                (exported / 'wheels').mkdir(parents=True, exist_ok=True)
+                (exported / 'baseline.json').write_bytes(b'descriptor')
+                (exported / 'wheels/fixture.whl').write_bytes(b'wheel')
         elif argv[:2] == ['docker', 'inspect']:
             output = 'false'
+        elif argv[:2] == ['docker', 'exec'] and argv[-1].startswith('import hashlib,json\n'):
+            output = json.dumps({'baseline.json': hashlib.sha256(b'descriptor').hexdigest(),
+                                 'wheels/fixture.whl': hashlib.sha256(b'wheel').hexdigest()})
         return subprocess.CompletedProcess(argv, code, output, 'injected failure' if code else '')
 
 
@@ -236,7 +246,7 @@ def test_image_migration_schema_probe_verifies_installed_and_retained_schema_byt
     expected = {member: hashlib.sha256(data).hexdigest() for member, data in files.items()}
     runtime, bundles = tmp_path / 'runtime', tmp_path / 'bundles'
     for member, data in files.items():
-        path = runtime / 'lib/python3.12/site-packages' / member
+        path = runtime / python_site_packages() / member
         path.parent.mkdir(parents=True, exist_ok=True)
         if location == 'runtime' and member == migration:
             if defect == 'missing':
@@ -594,3 +604,195 @@ def test_scenario_can_replace_and_verify_cleanup_of_its_own_container(monkeypatc
     fake.linger = True
     with pytest.raises(module.Failure, match='cleanup failed'):
         docker.rm('da-owned')
+
+
+@pytest.mark.parametrize('observed,accepted', [((35, 6), True), ((21, 6), False), ((36, 6), False), ((35, 7), False)])
+def test_boot_image_construction_audit_composition_is_exact(monkeypatch, observed, accepted):
+    import ast
+    module = load('scenarios/boot', monkeypatch)
+    tree = ast.parse((EXPERIMENT / 'scenarios/boot.py').read_text())
+    checks = [node for node in ast.walk(tree) if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+              and isinstance(node.value.func, ast.Name) and node.value.func.id == 'check'
+              and isinstance(node.value.args[0], ast.Compare)
+              and isinstance(node.value.args[0].left, ast.Subscript)
+              and isinstance(node.value.args[0].left.value, ast.Name) and node.value.args[0].left.value.id == 'before']
+    assert len(checks) == 2
+    code = compile(ast.Module(body=checks, type_ignores=[]), 'boot-image-audit-checks', 'exec')
+    if accepted:
+        exec(code, dict(vars(module), before=observed))
+    else:
+        with pytest.raises(module.Failure):
+            exec(code, dict(vars(module), before=observed))
+    assert '7 locks + 14 core/variant wheel builds + 14 attested producer builds' in ast.unparse(checks[0])
+
+
+@pytest.mark.parametrize('provider', ['local', 's3', 'azure'])
+@pytest.mark.parametrize('changed', [None, 'baseline.json', 'wheels/fixture.whl', 'missing-wheel'])
+def test_checkpoint_driver_verifies_bridge_before_restore(monkeypatch, tmp_path, provider, changed):
+    module = load('run-checkpoint-restore-proof', monkeypatch)
+    monkeypatch.setenv('PROOF_EVIDENCE_DIR', str(tmp_path))
+    monkeypatch.setenv('PROOF_CHECKPOINT_PROVIDER', provider)
+    docker = FakeDocker()
+    new = 'da-24-' + provider + '-replacement'
+    verified = []
+    def execute(argv, **kwargs):
+        result = docker(argv, **kwargs)
+        if argv[:2] == ['docker', 'exec'] and argv[-1] == module.BRIDGE_HASHES:
+            verified.append(argv[2])
+            if argv[2] == new and changed:
+                document = json.loads(result.stdout)
+                if changed == 'missing-wheel':
+                    document.pop('wheels/fixture.whl')
+                else:
+                    document[changed] = 'changed bytes'
+                result.stdout = json.dumps(document)
+        if argv[-2:] == ['/repo/uv-experiment/preparation/checkpoint_restore_proof.py', 'restore']:
+            assert verified == [new]
+            assert (tmp_path / 'qualified-image/baseline.json').read_bytes() == b'descriptor'
+            assert (tmp_path / 'qualified-image-hashes.json').exists()
+        return result
+    monkeypatch.setattr(module.subprocess, 'run', execute)
+    if changed:
+        with pytest.raises(AssertionError, match='copied qualified image bridge bytes differ'):
+            module.main()
+        assert not any(command[-1] == 'restore' for command in docker.commands)
+    else:
+        module.main()
+        copies = [command for command in docker.commands if command[:2] == ['docker', 'cp']
+                  and any('/qualified-image' in part for part in command)]
+        assert len(copies) == 2
+        first_verify = next(command for command in docker.commands if command[-1] == module.BRIDGE_HASHES)
+        restore = next(command for command in docker.commands if command[-1] == 'restore')
+        assert max(docker.commands.index(command) for command in copies) < docker.commands.index(first_verify) < docker.commands.index(restore)
+        assert json.loads((tmp_path / 'qualified-image-hashes.json').read_text())['baseline.json']
+    assert not docker.containers and not docker.volumes
+
+
+def image_owned_fixture(module, monkeypatch, tmp_path):
+    root = tmp_path / 'image'
+    descriptor = root / 'qualified-image/baseline.json'
+    paths = SimpleNamespace(da_root=root, bundles_dir=root / 'bundles', manifest_file=root / 'bundles/manifest.json',
+                            runtime_venv=root / 'managed-runtime3.14')
+    executor = root / 'executor/bin/python'
+    files = [root / 'local3.14/pyvenv.cfg', root / 'local3.14/bin/certbot.unmanaged', paths.manifest_file, executor]
+    for name in ('core-r1', 'runtime-r1'):
+        files.extend(paths.bundles_dir / name / filename for filename in ('pyproject.toml', 'uv.lock', 'inventory.json'))
+    for path in files:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'image-owned sentinel')
+    monkeypatch.setattr(module, 'sys', SimpleNamespace(executable=str(executor)))
+    monkeypatch.setattr(module, 'DESCRIPTOR', descriptor)
+    def provision(*args):
+        assert not descriptor.exists(), 'bridge starts absent and is created only by provisioning'
+        descriptor.parent.mkdir()
+        descriptor.write_bytes(b'image descriptor')
+        wheels = descriptor.parent / 'wheels'
+        wheels.mkdir()
+        for name in ('first', 'second'):
+            (wheels / (name + '-1-py3-none-any.whl')).write_bytes(b'image wheel ' + name.encode())
+    return paths, descriptor, executor, provision
+
+
+@pytest.mark.parametrize('script', ['cold_restore_proof', 'checkpoint_restore_proof'])
+@pytest.mark.parametrize('damage', ['none', 'bytes', 'mode', 'uid', 'gid', 'deleted', 'added'])
+def test_restore_proof_image_snapshot_after_provisioning_detects_damage(monkeypatch, tmp_path, script, damage):
+    """Execute the actual snapshot/destructive-call/assertion statements, not DB restore."""
+    import ast
+    import os
+    monkeypatch.syspath_prepend(str(EXPERIMENT / 'preparation'))
+    cold = load('preparation/cold_restore_proof', monkeypatch)
+    paths, descriptor, executor, provision = image_owned_fixture(cold, monkeypatch, tmp_path)
+    backup = tmp_path / 'backup'
+    backup.mkdir()
+    module = cold if script == 'cold_restore_proof' else load('preparation/checkpoint_restore_proof', monkeypatch)
+    monkeypatch.setattr(module, 'fingerprint_image_owned', cold.fingerprint_image_owned)
+    monkeypatch.setattr(module, 'assert_image_owned_unchanged', cold.assert_image_owned_unchanged)
+    tree = ast.parse((EXPERIMENT / 'preparation' / (script + '.py')).read_text())
+    main = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'main')
+    branch = next(node for node in main.body if isinstance(node, ast.If) and ast.unparse(node.test) == "action == 'restore'")
+    snapshot = next(node for node in branch.body if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == 'image_before')
+    destructive_name = 'completed' if script == 'cold_restore_proof' else 'killed'
+    destructive = next(node for node in branch.body if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == destructive_name)
+    assert branch.body.index(snapshot) + 1 == branch.body.index(destructive)
+    persist = next(node for node in branch.body if isinstance(node, ast.Expr) and 'assert_image_owned_unchanged' in ast.unparse(node))
+    assert branch.body.index(destructive) < branch.body.index(persist)
+    if script == 'cold_restore_proof':
+        provisioning = next(node for node in branch.body if isinstance(node, ast.Expr) and ast.unparse(node).startswith('provision_image_baseline('))
+        assert branch.body.index(provisioning) < branch.body.index(snapshot)
+    else:
+        provisioning = None  # Driver provisions before entering checkpoint proof.
+    target = descriptor.parent / 'wheels/first-1-py3-none-any.whl'
+    def restore(*args, **kwargs):
+        assert descriptor.exists() and target.exists()
+        if damage == 'bytes':
+            target.write_bytes(b'changed image-owned bytes')
+        elif damage == 'mode':
+            target.chmod(0o600)
+        elif damage == 'deleted':
+            target.unlink()
+        elif damage == 'added':
+            (target.parent / 'unexpected-1-py3-none-any.whl').write_bytes(b'unexpected image-owned wheel')
+        elif damage in ('uid', 'gid'):
+            original_stat = Path.stat
+            def changed_stat(path, *args, **kwargs):
+                info = original_stat(path, *args, **kwargs)
+                if path == target:
+                    values = list(info)
+                    values[4 if damage == 'uid' else 5] += 1
+                    return os.stat_result(values)
+                return info
+            monkeypatch.setattr(Path, 'stat', changed_stat)
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
+    namespace = dict(vars(module), paths=paths, DESCRIPTOR=descriptor, BACKUP=backup,
+                     subprocess=SimpleNamespace(run=restore), command=[], crash_command=[], restore_env={},
+                     provision_image_baseline=provision)
+    if provisioning is None:
+        provision()  # Same precondition supplied by the separately tested driver.
+    nodes = ([provisioning] if provisioning else []) + [snapshot, destructive, persist]
+    code = compile(ast.Module(body=nodes, type_ignores=[]), script + '-snapshot-boundary', 'exec')
+    if damage == 'none':
+        exec(code, namespace)
+        recorded = json.loads((backup / 'image-owned.json').read_text())
+        required = [paths.da_root / 'local3.14/pyvenv.cfg', paths.bundles_dir / 'core-r1/uv.lock',
+                    paths.bundles_dir / 'runtime-r1/uv.lock', executor, descriptor, target,
+                    descriptor.parent / 'wheels/second-1-py3-none-any.whl']
+        assert all(str(path) in recorded for path in required)
+        assert recorded == cold.fingerprint_image_owned(paths)
+    else:
+        with pytest.raises(AssertionError, match='restore changed protected image/stock bytes or metadata'):
+            exec(code, namespace)
+        assert not (backup / 'image-owned.json').exists()
+
+
+def test_checkpoint_bridge_hash_program_measures_descriptor_and_every_wheel(monkeypatch, tmp_path, capsys):
+    module = load('run-checkpoint-restore-proof', monkeypatch)
+    bridge = tmp_path / 'bridge'
+    (bridge / 'wheels').mkdir(parents=True)
+    members = {'baseline.json': b'descriptor', 'wheels/first.whl': b'first wheel', 'wheels/second.whl': b'second wheel'}
+    for name, data in members.items():
+        (bridge / name).write_bytes(data)
+    program = module.BRIDGE_HASHES.replace("Path('/etc/docassemble/qualified-image')", 'Path(' + repr(str(bridge)) + ')')
+    exec(program, {})
+    assert json.loads(capsys.readouterr().out) == {name: hashlib.sha256(data).hexdigest() for name, data in members.items()}
+    (bridge / 'wheels/first.whl').write_bytes(b'changed')
+    exec(program, {})
+    assert json.loads(capsys.readouterr().out)['wheels/first.whl'] == hashlib.sha256(b'changed').hexdigest()
+    (bridge / 'baseline.json').unlink()
+    with pytest.raises(FileNotFoundError):
+        exec(program, {})
+
+
+@pytest.mark.parametrize('solves,accepted', [(35, True), (21, False), (36, False)])
+def test_boot_failed_gate_requires_unchanged_verified_audit(monkeypatch, solves, accepted):
+    import ast
+    module = load('scenarios/boot', monkeypatch)
+    tree = ast.parse((EXPERIMENT / 'scenarios/boot.py').read_text())
+    gate = next(node for node in ast.walk(tree) if isinstance(node, ast.Expr)
+                and 'failed gate invoked resolver/build' in ast.unparse(node))
+    code = compile(ast.Module(body=[gate], type_ignores=[]), 'boot-failed-gate-audit', 'exec')
+    namespace = dict(vars(module), before=(35, 6), docker=None, counts=lambda docker: (solves, 6))
+    if accepted:
+        exec(code, namespace)
+    else:
+        with pytest.raises(module.Failure):
+            exec(code, namespace)

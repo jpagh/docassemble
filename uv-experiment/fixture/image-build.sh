@@ -4,7 +4,6 @@
 set -euo pipefail
 
 BUNDLE_ROOT=/usr/share/docassemble/managed/bundles
-RUNTIME_VENV=/usr/share/docassemble/local3.12
 EXECUTOR_VENV=/usr/share/docassemble/executor-venv
 SOURCE_ROOT=/opt/da-sources
 FIXTURE=/opt/docassemble-fixture
@@ -15,9 +14,32 @@ export UV_CACHE_DIR="${UV_CACHE_DIR:-/var/cache/docassemble/uv}"
 mkdir -p "$UV_PYTHON_INSTALL_DIR" "$UV_CACHE_DIR" "$BUNDLE_ROOT"
 
 echo "image-build: installing pinned CPython"
-uv python install 3.12.14
+MANAGED_PYTHON_VERSION=3.14.4
+uv python install "$MANAGED_PYTHON_VERSION"
 uv --version
-uv python find 3.12
+UV_PYTHON=$(uv python find --managed-python "$MANAGED_PYTHON_VERSION")
+export UV_PYTHON
+export UV_PYTHON_DOWNLOADS=never
+"$UV_PYTHON" - "$UV_PYTHON_INSTALL_DIR" "$MANAGED_PYTHON_VERSION" <<'PYTHON'
+from pathlib import Path
+import sys
+assert Path(sys.executable).resolve().is_relative_to(Path(sys.argv[1]).resolve())
+assert '.'.join(map(str, sys.version_info[:3])) == sys.argv[2]
+PYTHON
+
+# Bootstrap uses only stdlib modules from the protected image build inputs.
+check_python_target() {
+    "$UV_PYTHON" - "$1" <<'PYTHON'
+from pathlib import Path
+import sys
+sys.path[:0] = ['/opt/docassemble-executor/src', '/docassemble_base']
+from docassemble_executor.bundles import verify_python_target
+bundle = Path(sys.argv[1])
+assert verify_python_target(bundle / 'pyproject.toml', bundle / 'uv.lock'), 'retained project and lock Python target mismatch'
+PYTHON
+}
+
+check_python_target /opt/docassemble-executor
 
 echo "image-build: materializing bundle sources"
 for name in core-r1 runtime-r1 runtime-r2; do
@@ -39,7 +61,29 @@ cp -a "$FIXTURE/slowfixture" "$BUNDLE_ROOT/runtime-r2/sources/"
 cp -a "$BUNDLE_ROOT/runtime-r2" "$BUNDLE_ROOT/runtime-fault"
 
 echo "image-build: syncing the independent executor venv"
+check_python_target /opt/docassemble-executor
 UV_PROJECT_ENVIRONMENT="$EXECUTOR_VENV" uv sync --frozen --project /opt/docassemble-executor
+DA_RUNTIME_VENV=$("$EXECUTOR_VENV/bin/python" -c 'from docassemble_executor.paths import ExecutorPaths; print(ExecutorPaths.from_env().runtime_venv)')
+export DA_RUNTIME_VENV
+RUNTIME_VENV="$DA_RUNTIME_VENV"
+"$EXECUTOR_VENV/bin/python" - "$FIXTURE" "$EXECUTOR_VENV" "$UV_PYTHON" <<'PYTHON'
+from pathlib import Path
+import sys
+import os
+import tomllib
+from docassemble.base.managed_python import python_requires
+from docassemble_executor.paths import ExecutorPaths
+paths = ExecutorPaths.from_env()
+assert Path(sys.executable).resolve() == Path(sys.argv[3]).resolve()
+runtime = paths.runtime_venv.resolve()
+protected = [paths.da_root / 'local3.14', Path(sys.argv[2]), Path(sys.argv[3]).resolve().parent.parent,
+             Path(os.environ['UV_PYTHON_INSTALL_DIR']), paths.bundles_dir, paths.cache_dir]
+for root in protected:
+    root = root.resolve()
+    assert not runtime.is_relative_to(root) and not root.is_relative_to(runtime), 'managed runtime overlaps protected material'
+for template in [Path('/opt/docassemble-executor/pyproject.toml'), *Path(sys.argv[1]).glob('bundles/*/pyproject.toml')]:
+    assert tomllib.loads(template.read_text())['project']['requires-python'] == python_requires()
+PYTHON
 
 # Explicit test-only DB intent is seeded after create_tables, before web startup.
 # Production sources are untouched; only these disposable staged wheels contain it.
@@ -56,18 +100,30 @@ for name in core-r1 runtime-r1 runtime-r2 runtime-fault; do
 done
 
 echo "image-build: preparing registry sdist wheels once, at image construction"
-UV_PROJECT_ENVIRONMENT="$RUNTIME_VENV" uv sync --frozen --project "$BUNDLE_ROOT/core-r1"
+check_python_target "$BUNDLE_ROOT/core-r1"
+REGISTRY_BUILDS=$(mktemp -d)
+"$EXECUTOR_VENV/bin/python" "$FIXTURE/materialize_wheels.py" "$BUNDLE_ROOT/core-r1" --build-registry-sdists "$REGISTRY_BUILDS/wheels"
 for name in core-r1 runtime-r1 runtime-r2; do
-    "$EXECUTOR_VENV/bin/python" "$FIXTURE/materialize_wheels.py" "$BUNDLE_ROOT/$name" --retain-built
+    "$EXECUTOR_VENV/bin/python" "$FIXTURE/materialize_wheels.py" "$BUNDLE_ROOT/$name" --retain-built "$REGISTRY_BUILDS/wheels"
     (cd "$BUNDLE_ROOT/$name" && uv lock)
 done
+rm -rf "$REGISTRY_BUILDS"
+check_python_target "$BUNDLE_ROOT/core-r1"
+UV_PROJECT_ENVIRONMENT="$RUNTIME_VENV" uv sync --frozen --project "$BUNDLE_ROOT/core-r1"
 
 echo "image-build: recording actual inventories in the single runtime venv"
 for name in core-r1 runtime-r2 runtime-r1; do
+    check_python_target "$BUNDLE_ROOT/$name"
     UV_PROJECT_ENVIRONMENT="$RUNTIME_VENV" uv sync --frozen --no-build --project "$BUNDLE_ROOT/$name"
     "$EXECUTOR_VENV/bin/python" -c 'import json,sys; from pathlib import Path; from docassemble_executor.inventory import inspect_environment, inspect_material; p=Path(sys.argv[1]); print(json.dumps({"distributions": inspect_environment(p), "files": inspect_material(p)}, sort_keys=True))' "$RUNTIME_VENV" > "$BUNDLE_ROOT/$name/inventory.json"
 done
 cp "$BUNDLE_ROOT/runtime-r2/inventory.json" "$BUNDLE_ROOT/runtime-fault/inventory.json"
+
+"$EXECUTOR_VENV/bin/python" - "$RUNTIME_VENV/bin/python" <<'PYTHON'
+from pathlib import Path
+import sys
+assert Path(sys.argv[1]).resolve() == Path(sys.executable).resolve()
+PYTHON
 
 echo "image-build: rendering fixture configuration"
 "$RUNTIME_VENV/bin/python" "$FIXTURE/config/render_config.py" \

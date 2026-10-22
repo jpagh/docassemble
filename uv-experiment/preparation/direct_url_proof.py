@@ -8,6 +8,7 @@ bytes at a recorded URL failing closed, explicit Update preparing a new revision
 upstream unavailability reported without substitution, and secret-free retention.
 External availability limits are recorded, not guaranteed.
 """
+from docassemble.base.managed_python import python_target
 import base64
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -68,7 +69,7 @@ def wheel(name, version='1.0'):
 
 
 def baseline(**overrides):
-    value = {'core': {}, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    value = {'core': {}, 'target': python_target(), 'tool': {'uv': '0.12.21'},
              'config': {'index_url': 'https://pypi.org/simple'}, 'desired_inventory': {},
              'runtime': {'kind': 'normal', 'inventory': {}}}
     value.update(overrides)

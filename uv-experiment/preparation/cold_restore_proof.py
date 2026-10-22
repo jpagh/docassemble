@@ -1,4 +1,5 @@
 """Ticket 18 disposable DB/files restore after a real web-selected core upgrade."""
+from docassemble.base.managed_python import python_requires
 import base64
 import json
 import os
@@ -45,6 +46,38 @@ def assert_required_material_missing(dump, directory, prefix, name):
                 raise AssertionError('missing recovery/current material admitted')
         finally:
             held.rename(target)
+
+
+def fingerprint_image_owned(paths):
+    """Bounded byte/metadata sentinels for stock, bundle and protected tooling."""
+    stock = paths.da_root / 'local3.14'
+    directories = [stock, paths.bundles_dir, Path(sys.executable).parent.parent,
+                   Path(sys.executable).resolve().parent.parent, DESCRIPTOR.parent]
+    files = [stock / 'pyvenv.cfg', stock / 'bin/certbot.unmanaged', paths.manifest_file,
+             Path(sys.executable).resolve(), DESCRIPTOR]
+    for name in ('core-r1', 'runtime-r1'):
+        bundle = paths.bundles_dir / name
+        directories.append(bundle)
+        files.extend(bundle / name for name in ('pyproject.toml', 'uv.lock', 'inventory.json'))
+    if DESCRIPTOR.exists():
+        files.extend(sorted((DESCRIPTOR.parent / 'wheels').glob('*.whl')))
+    result = {}
+    for path in directories + files:
+        if not path.exists():
+            continue
+        info = path.stat()
+        result[str(path)] = {'mode': info.st_mode, 'uid': info.st_uid, 'gid': info.st_gid,
+                             'sha256': _sha(path) if path.is_file() else None}
+    assert str(stock / 'pyvenv.cfg') in result, 'stock image sentinel missing'
+    assert str(DESCRIPTOR) in result, 'qualified image bridge sentinel missing'
+    assert paths.runtime_venv.resolve() != stock.resolve(), 'managed runtime collides with stock'
+    return result
+
+
+def assert_image_owned_unchanged(paths, before):
+    after = fingerprint_image_owned(paths)
+    assert after == before, 'restore changed protected image/stock bytes or metadata'
+    return after
 
 
 def main(action):
@@ -131,12 +164,16 @@ def main(action):
         restore_env = dict(os.environ, DA_RESTORE_DATABASE_URL=url.render_as_string(hide_password=False))
         command = [sys.executable, '-m', 'docassemble_executor.cli', 'restore', '--dump', str(DUMP),
                    '--files', str(BACKUP / 'files.tar'), '--authorization', str(auth), '--prefix', expected['prefix']]
+        # Provisioning creates the bridge; snapshot it before destructive restore,
+        # which must not create, modify or delete any image-owned material.
+        image_before = fingerprint_image_owned(paths)
         completed = subprocess.run(command, env=restore_env, capture_output=True, text=True)
         assert restore_env['DA_RESTORE_DATABASE_URL'] not in repr(command), 'restore URL exposed in argv'
         assert restore_env['DA_RESTORE_DATABASE_URL'] not in completed.stdout + completed.stderr, 'restore URL exposed in output'
         if url.password:
             assert url.password not in completed.stdout + completed.stderr, 'restore credential exposed in output'
         assert completed.returncode == 0, completed.stdout + completed.stderr
+        (BACKUP / 'image-owned.json').write_text(json.dumps(assert_image_owned_unchanged(paths, image_before)))
         restored = json.loads((paths.state_dir / 'cold-restore.json').read_text())
         assert restored['state'] == 'pending' and restored['incomplete_backup'] and restored['unrestorable_revision_ids'], restored
         assert not (paths.runtime_venv / 'bin/python').exists()
@@ -164,6 +201,7 @@ def main(action):
         print('PASS independent actual DB/config/files restore with no old venv/cache; source auth round-trip, stale candidates/secret invalidation, missing material and false flag block', flush=True)
         return
     if action == 'verify':
+        assert fingerprint_image_owned(paths) == json.loads((BACKUP / 'image-owned.json').read_text()), 'runtime rebuild changed protected material'
         engine, prefix = database()
         service = Installation(engine, lambda *_: False, prefix)
         status = json.loads(paths.status_file.read_text())
@@ -222,8 +260,8 @@ def main(action):
         # a cold direct URL cannot silently become a registry package or re-solve.
         project = Path('/tmp/unavailable-frozen-source')
         project.mkdir()
-        (project / 'pyproject.toml').write_text('[project]\nname="unavailable"\nversion="1"\nrequires-python=">=3.12"\ndependencies=["absent"]\n')
-        lock = 'version = 1\nrevision = 3\nrequires-python = ">=3.12"\n[[package]]\nname = "absent"\nversion = "1"\nsource = { url = "http://127.0.0.1:1/absent-1-py3-none-any.whl" }\nwheels = [{ url = "http://127.0.0.1:1/absent-1-py3-none-any.whl", hash = "sha256:' + 'a' * 64 + '" }]\n[[package]]\nname = "unavailable"\nversion = "1"\nsource = { virtual = "." }\ndependencies = [{name = "absent"}]\n[package.metadata]\nrequires-dist = [{name = "absent"}]\n'
+        (project / 'pyproject.toml').write_text('[project]\nname="unavailable"\nversion="1"\nrequires-python= "' + python_requires() + '"\ndependencies=["absent"]\n')
+        lock = 'version = 1\nrevision = 3\nrequires-python = "' + python_requires() + '"\n[[package]]\nname = "absent"\nversion = "1"\nsource = { url = "http://127.0.0.1:1/absent-1-py3-none-any.whl" }\nwheels = [{ url = "http://127.0.0.1:1/absent-1-py3-none-any.whl", hash = "sha256:' + 'a' * 64 + '" }]\n[[package]]\nname = "unavailable"\nversion = "1"\nsource = { virtual = "." }\ndependencies = [{name = "absent"}]\n[package.metadata]\nrequires-dist = [{name = "absent"}]\n'
         (project / 'uv.lock').write_text(lock)
         result = subprocess.run(['uv', 'sync', '--frozen', '--no-build', '--project', str(project)],
             env=dict(os.environ, UV_PROJECT_ENVIRONMENT='/tmp/unavailable-venv', UV_CACHE_DIR='/tmp/unavailable-cache', UV_HTTP_RETRIES='0'),

@@ -4,6 +4,7 @@ Ticket 14b: schema/setup start and success are journaled separately, an uncertai
 outcome fences a silent replay on startup or ordinary Retry, and only a matching
 administrator/operator clearance permits a new attempt to rerun schema work.
 """
+from docassemble.base.managed_python import python_target
 import json
 from dataclasses import replace
 
@@ -223,7 +224,7 @@ def _publish_claim():
     from types import SimpleNamespace
     return SimpleNamespace(attempt_id='attempt-1', revision_id='rev-1', identity={'attempt_id': 'attempt-1'},
                            snapshot={'publication': {'result': {'bundle': {'inventory': {}}}},
-                                     'target': {'python': '3.12'}})
+                                     'target': python_target()})
 
 
 def test_prepare_published_journals_start_then_success(tmp_path, monkeypatch):

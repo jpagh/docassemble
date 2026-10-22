@@ -11,6 +11,8 @@ synthesizes one.
 """
 from __future__ import annotations
 
+from docassemble.base.managed_python import python_target
+
 import base64
 from email.parser import BytesParser
 from html.parser import HTMLParser
@@ -88,7 +90,7 @@ def validate_private_policy(inputs: dict[str, Any]) -> dict[str, Any]:
     from .preparation import parse_registry_requirement
     baseline = inputs['baseline']
     config = effective_config(inputs)
-    if (baseline['target'] != {'python': '3.12'} or baseline['tool'] != {'uv': UV_VERSION}
+    if (baseline['target'] != python_target() or baseline['tool'] != {'uv': UV_VERSION}
             or not {'private_indexes', 'private_bindings'} <= set(config)
             or set(config) - {'private_indexes', 'private_bindings', 'private_tls_exceptions'}):
         raise PreparationError('unsupported private distribution snapshot policy')

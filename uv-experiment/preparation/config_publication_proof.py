@@ -3,6 +3,7 @@
 Uses an isolated schema and disposable builder venvs. The first pending slot is
 released by the proof fixture, NOT by reporting a successful installation.
 """
+from docassemble.base.managed_python import python_target
 import importlib.util
 import json
 import os
@@ -29,7 +30,7 @@ def main():
         metadata = json.load(response)
     core_hash = next(row['digests']['sha256'] for row in metadata['urls'] if row['packagetype'] == 'sdist')
     core = {'packaging': {'version': '25.0', 'source_digest': core_hash}}
-    baseline = {'core': core, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    baseline = {'core': core, 'target': python_target(), 'tool': {'uv': '0.12.21'},
                 'config': {'index_url': 'https://pypi.org/simple'}, 'desired_inventory': core,
                 'runtime': {'kind': 'normal', 'inventory': core}}
     url = os.environ['DA_PREPARATION_TEST_URL']

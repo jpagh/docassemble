@@ -1,4 +1,5 @@
 """Explicit experimental image-baseline gate, not adoption or core upgrade authority."""
+from docassemble.base.managed_python import python_target
 import json
 import os
 from pathlib import Path
@@ -22,7 +23,7 @@ def configured_baseline():
     try:
         document = json.loads(Path(path).read_text())
         baseline = document['baseline']
-        if (document['format'] != 1 or baseline['target'] != {'python': '3.12'} or
+        if (document['format'] != 1 or baseline['target'] != python_target() or
                 baseline['tool'] != {'uv': '0.12.21'} or
                 not _qualified_config(baseline['config']) or
                 not baseline['core'] or not baseline['image_baseline']):

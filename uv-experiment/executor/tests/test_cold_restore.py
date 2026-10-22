@@ -163,6 +163,12 @@ def test_restore_objects_never_overwrites_image_owned_material(tmp_path):
     manifest, baseline = tmp_path / 'manifest.json', tmp_path / 'baseline.json'
     manifest.write_text('replacement-image')
     baseline.write_text('replacement-baseline')
+    stock = tmp_path / 'local3.14'
+    stock.mkdir(mode=0o750)
+    (stock / 'sentinel').write_bytes(b'stock 1.10.7')
+    managed = tmp_path / 'managed-runtime3.14'
+    managed.mkdir()
+    (managed / 'sentinel').write_bytes(b'reconstruct, never restore')
     material = tmp_path / 'material-x'
     material.write_text('old')
     info = {'mode': 0o644, 'uid': os.getuid(), 'gid': os.getgid()}
@@ -176,6 +182,10 @@ def test_restore_objects_never_overwrites_image_owned_material(tmp_path):
     assert manifest.read_text() == 'replacement-image'
     assert baseline.read_text() == 'replacement-baseline'
     assert material.read_text() == 'material-bytes'
+    assert (stock / 'sentinel').read_bytes() == b'stock 1.10.7'
+    assert stock.stat().st_mode & 0o777 == 0o750
+    assert (managed / 'sentinel').read_bytes() == b'reconstruct, never restore'
+    assert managed != stock
 
 
 def test_checkpoint_completion_fsync_skips_image_owned_directories(tmp_path):

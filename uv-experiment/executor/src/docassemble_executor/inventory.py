@@ -6,6 +6,8 @@ an integrity/admission check, not a sandbox or a package signature scheme.
 
 from __future__ import annotations
 
+from docassemble.base.managed_python import python_site_packages
+
 import base64
 import csv
 import hashlib
@@ -71,7 +73,7 @@ def wheel_payload_material(wheels: Path) -> dict[str, str | list[str]]:
     """Immutable wheel payload hashes, including qualified namespace overlaps.
 
     Generated interpreter entrypoints/provenance are not wheel payloads. Only the
-    Python-3.12 image bridge uses this mapping; no runtime RECORD supplies hashes.
+    managed image bridge uses this mapping; no runtime RECORD supplies hashes.
     """
     from zipfile import ZipFile
     material: dict[str, list[str]] = {}
@@ -89,7 +91,7 @@ def wheel_payload_material(wheels: Path) -> dict[str, str | list[str]]:
                     parts = parts[2:]
                 if parts[-1] == 'RECORD':
                     continue
-                name = 'lib/python3.12/site-packages/' + '/'.join(parts)
+                name = (python_site_packages() / Path(*parts)).as_posix()
                 material.setdefault(name, []).append(hashlib.sha256(archive.read(entry)).hexdigest())
     return {name: sorted(set(values)) for name, values in material.items()}
 

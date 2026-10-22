@@ -1,3 +1,4 @@
+from docassemble.base.managed_python import python_site_packages
 from docassemble_executor.alembic_probe import (
     STATUS_COMPATIBLE,
     STATUS_INCOMPATIBLE,
@@ -44,7 +45,7 @@ def test_decide_compatibility():
 
 def test_find_versions_dir(tmp_path):
     venv = tmp_path / "venv"
-    versions = venv / "lib" / "python3.12" / "site-packages" / "docassemble" / "webapp" / "alembic" / "versions"
+    versions = venv / python_site_packages() / "docassemble" / "webapp" / "alembic" / "versions"
     versions.mkdir(parents=True)
     assert find_versions_dir(venv) == versions
     assert find_versions_dir(tmp_path / "missing") is None

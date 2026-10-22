@@ -3,6 +3,7 @@
 Run separately from the native act gate using DA_PREPARATION_TEST_URL.
 Only explicit fixture baseline intent is seeded. No live venv is touched.
 """
+from docassemble.base.managed_python import python_target
 import copy
 import importlib.util
 import os
@@ -470,7 +471,7 @@ def test_real_builder_retained_attestation_completion(protocol):
     ready = json.loads((evidence / 'attestation.json').read_text())
     verify_retained(evidence / 'retained' / ready['bundle']['digest'], ready['bundle']['digest'])
     core = {'packaging': ready['bundle']['inventory']['packaging']}
-    baseline = {'core': core, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    baseline = {'core': core, 'target': python_target(), 'tool': {'uv': '0.12.21'},
                 'config': {'index_url': 'https://pypi.org/simple'}, 'desired_inventory': core,
                 'runtime': {'kind': 'normal', 'inventory': core}}
     with protocol.engine.begin() as connection:

@@ -1,4 +1,5 @@
 """Source-named local installation journal/CLI regression boundaries."""
+from docassemble.base.managed_python import python_target
 import pytest
 
 from docassemble_executor.cli import build_parser
@@ -8,7 +9,7 @@ from docassemble_executor.journal import Journal, Operation, PHASE_MUTATION_STAR
 def test_installation_binding_and_terminal_survive_journal_round_trip(tmp_path):
     binding = {'attempt_id': 'attempt', 'revision_id': 'revision', 'fence': 1,
                'host_id': 'host', 'runtime_generation': 2, 'bundle_digest': 'a' * 64,
-               'target': {'python': '3.12'}}
+               'target': python_target()}
     journal = Journal()
     journal.begin_mutation(Operation(id='attempt', kind='published-materialization',
                                     revision='revision', binding=binding))
@@ -56,7 +57,7 @@ def test_installation_poller_persists_redacted_gate_failure(tmp_path, monkeypatc
     monkeypatch.setenv('DAALLOWUPDATES', 'true')
     paths = ExecutorPaths.from_env()
     paths.config_file.write_text('allow updates: ' + ('false' if reason == 'updates-disabled' else 'true') + '\n')
-    baseline = {'core': {}, 'target': {'python': '3.12'}, 'tool': {'uv': UV_VERSION}}
+    baseline = {'core': {}, 'target': python_target(), 'tool': {'uv': UV_VERSION}}
     claim = InstallationClaim('attempt', 'revision', 1, 'host', 2,
         dict(baseline, publication={'result': {'bundle': {'digest': 'a' * 64}}}))
     trusted = dict(baseline, target={'python': '3.13'}) if reason == 'target-mismatch' else baseline
@@ -136,7 +137,7 @@ def test_installation_poller_drain_timeout_preserves_normally_serving_runtime(tm
             return response.read()
     client = threading.Thread(target=lambda: results.append(get('/slow')))
     claim = InstallationClaim('attempt', 'revision', 1, 'host', 2,
-        {'publication': {'result': {'bundle': {'digest': 'a' * 64}}}, 'target': {'python': '3.12'}})
+        {'publication': {'result': {'bundle': {'digest': 'a' * 64}}}, 'target': python_target()})
     reports = []
     def report(receipt):
         if lost_report and not reports:
@@ -188,3 +189,46 @@ def test_installation_cli_requires_trusted_store_and_baseline():
                                      '--baseline', '/baseline', '--prefix', 'managed_', '--once'])
     assert args.command == 'poll-installation' and args.once
     assert args.store == '/store' and args.baseline == '/baseline' and args.prefix == 'managed_'
+
+
+@pytest.mark.parametrize('mode,reason', [('old-trusted-and-claim', 'unsupported-target'),
+    ('old-claim', 'target-mismatch'), ('old-lock', 'bundle-invalid')])
+def test_installation_refuses_old_targets_and_rehashed_lock_before_mutation(upgrade, monkeypatch, mode, reason):  # noqa: F811
+    import json
+    from copy import deepcopy
+    from dataclasses import replace
+    import sys
+    from docassemble_executor.installation import InstallationFailure
+    from docassemble_executor.bundles import sha256_file
+    from docassemble_executor.preparation import digest
+    monkeypatch.setattr(sys, 'version_info', (3, 14, 4))
+    poller, original, trusted = upgrade
+    claim = replace(original, snapshot=deepcopy(original.snapshot))
+    # Unqualified boundary still applies exact claim/trusted/observed checks.
+    claim.snapshot.pop('image_baseline')
+    claim.snapshot.pop('selected_baseline')
+    claim.snapshot['core'] = trusted['core']
+    if mode == 'old-trusted-and-claim':
+        trusted['target'] = {'python': '3.12'}
+        claim.snapshot['target'] = {'python': '3.12'}
+        poller.baseline.write_text(json.dumps(trusted))
+    elif mode == 'old-claim':
+        claim.snapshot['target'] = {'python': '3.12'}
+    else:
+        bundle = claim.snapshot['publication']['result']['bundle']
+        directory = poller.store / bundle['digest']
+        (directory / 'uv.lock').write_text('requires-python="==3.12.*"')
+        manifest = {p.relative_to(directory).as_posix(): sha256_file(p)
+                    for p in directory.rglob('*') if p.is_file() and p.name != 'manifest.json'}
+        reference = digest(manifest)
+        (directory / 'manifest.json').write_text(json.dumps(manifest))
+        directory.rename(poller.store / reference)
+        bundle.update(digest=reference, lock_digest=manifest['uv.lock'])
+        # Exercise the apply lock gate, not selection's independent core binding.
+    with pytest.raises(InstallationFailure) as error:
+        poller._gates(claim)
+    assert str(error.value) == reason
+    assert not poller.paths.journal_file.exists()
+
+
+from test_selected_baseline import upgrade  # noqa: E402,F401 -- source-named gate fixture

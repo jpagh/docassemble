@@ -1,4 +1,5 @@
 """Exit authority must fail closed; real daemon proof lives in preparation/."""
+from docassemble.base.managed_python import python_target
 import fcntl
 import json
 from unittest.mock import Mock
@@ -86,7 +87,7 @@ def test_container_policy_rejects_credentials_before_staging(tmp_path, config):
     from docassemble_executor.preparation import Claim
     authority, _ = workers(tmp_path)
     authority._docker = Mock()
-    inputs = {'baseline': {'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    inputs = {'baseline': {'target': python_target(), 'tool': {'uv': '0.12.21'},
                           'config': config}, 'contributions': [],
               'requirement': {'declaration': 'six==1.17.0'}}
     with pytest.raises(PreparationError) as error:

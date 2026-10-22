@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Intentional checkpoint restore in disposable containers; never host services."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -7,6 +8,15 @@ import subprocess
 import time
 
 from proof_resources import cleanup, refuse_existing
+
+BRIDGE_HASHES = '''import hashlib,json
+from pathlib import Path
+root = Path('/etc/docassemble/qualified-image')
+wheels = sorted((root / 'wheels').glob('*.whl'))
+assert wheels, 'qualified image bridge wheels missing'
+print(json.dumps({str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
+                  for path in [root / 'baseline.json', *wheels]}, sort_keys=True))
+'''
 
 
 def main():
@@ -66,7 +76,6 @@ def main():
         assert run(['docker', 'inspect', old, '--format', '{{.State.Running}}']).stdout.strip() == 'false'
         run(['docker', 'run', '-d', '--name', new, *shared, '--entrypoint', '/bin/bash', image,
              '-c', 'service postgresql start && exec sleep infinity'])
-        step(new, 'checkpoint_restore_proof', 'restore')
         # The checkpoint captures managed state, never image-owned material. The
         # qualified image baseline (descriptor and fixed wheels) is image-owned
         # and identical for the same image, so the operator-provisioned directory
@@ -75,6 +84,17 @@ def main():
              str(evidence / 'qualified-image')])
         run(['docker', 'cp', str(evidence / 'qualified-image') + '/.',
              new + ':/etc/docassemble/qualified-image'])
+        # Provision and verify before the proof snapshots protected material;
+        # restore itself must never write the image bridge.
+        exported_bridge = evidence / 'qualified-image'
+        exported_wheels = sorted((exported_bridge / 'wheels').glob('*.whl'))
+        assert exported_wheels, 'exported qualified image bridge wheels missing'
+        source_bridge = {str(path.relative_to(exported_bridge)): hashlib.sha256(path.read_bytes()).hexdigest()
+                         for path in [exported_bridge / 'baseline.json', *exported_wheels]}
+        copied_bridge = json.loads(run(['docker', 'exec', new, python, '-c', BRIDGE_HASHES]).stdout)
+        assert copied_bridge == source_bridge, 'copied qualified image bridge bytes differ'
+        (evidence / 'qualified-image-hashes.json').write_text(json.dumps(copied_bridge, sort_keys=True))
+        step(new, 'checkpoint_restore_proof', 'restore')
         # Setup is prohibited in this proof even if a regression tried it. The
         # independent executor still performs real read-only schema/role checks.
         boot = ('from unittest.mock import patch; from docassemble_executor.cli import main; '

@@ -1,4 +1,5 @@
 """Real HTTPS Basic-auth source -> pinned uv offline private wheel preparation."""
+from docassemble.base.managed_python import python_target
 import base64
 import copy
 import hashlib
@@ -113,7 +114,7 @@ def main():
                                                'username': 'other', 'password': 'OTHER_DISPOSABLE_TOKEN'}))
         other_reference.chmod(0o600)
         core = {'private-core': {'version': '1.0', 'source_digest': hashlib.sha256(packages['private_core-1.0-py3-none-any.whl']).hexdigest()}}
-        inputs = {'baseline': {'core': core, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+        inputs = {'baseline': {'core': core, 'target': python_target(), 'tool': {'uv': '0.12.21'},
                   'config': {'private_indexes': {'alpha': index},
                              'private_bindings': {'private-one': 'alpha', 'private-two': 'alpha', 'private-core': 'alpha'}},
                   'desired_inventory': core, 'runtime': {'kind': 'normal', 'inventory': core}},

@@ -1,5 +1,29 @@
 # uv environment experiment
 
+## Current target (ticket 25 — not yet container-qualified)
+
+The fixture now provisions conventional uv-managed CPython **3.14.4** with uv
+**0.12.21** into protected `UV_PYTHON_INSTALL_DIR`. The independent executor and
+runtime are created from that same executable. The managed runtime defaults to
+`/usr/share/docassemble/managed-runtime3.14`, derived by the executor from its
+observed major/minor; `DA_RUNTIME_VENV` remains an explicit override. Stock
+`/usr/share/docassemble/local3.14` (docassemble 1.10.7) is never reused or mutated
+by managed sync/reconstruction. Cron and Exim paths are rendered at image build.
+
+Every baseline names one exact observed interpreter target; there is no version
+allow-list. Both project and lock must declare the matching exact minor
+constraint. Old 3.12 locks refuse without repair. Image construction and isolated
+candidate preparation may solve/build sdists (including pinned numpy 2.2.6 and
+scipy 1.15.3); retained apply/rollback/restore use `--frozen --no-build`. The narrow
+interrupted runtime-fault proof remains the existing exception.
+
+Serving remains Gunicorn, not the system-built `mod_wsgi.so-3.14`: this retarget
+is **not Apache/mod_wsgi certification**. Host checks observed 3.14.4, but no
+3.14 image build or qualification matrix is claimed yet. Ticket 24 remains
+historical **3.12.14** evidence only. See [`TICKET-25.md`](TICKET-25.md) for the
+implementation-only outcome and [`24/OPERATOR.md`](24/OPERATOR.md) for fresh gates,
+three image builds and the unchanged full 30-phase acceptance command.
+
 ## Complete-experiment qualification (ticket 24)
 
 The sections below preserve the original ticket-01 through 04 proof history;
@@ -125,8 +149,10 @@ DOCASSEMBLE_OS_IMAGE=jhpyle/docassemble-os@sha256:... PROOF_IMAGE=... ./uv-exper
 The command is intentionally Docker-only: the proof is about what actually
 happens in a disposable container, not about static inspection. It uses
 in-container PostgreSQL 18 and Redis from the pinned base image and publishes a
-host port only for HTTP checks. The tested target is Linux aarch64, CPython
-3.12.14, with uv 0.12.21; Docker must support that image's architecture. Reserve
+host port only for HTTP checks. The historical tested target was Linux aarch64,
+CPython 3.12.14, with uv 0.12.21. The current fixture requests managed 3.14.4;
+its container qualification is pending. Docker must support the pinned image's
+architecture. Reserve
 ports 18080/18081 and the `da-uv-proof*` names: the harness replaces its own
 previous fixtures. Do not use the fixture credentials or configuration in
 production. The CLI `init-db`, `apply-runtime`, and `recover` commands are

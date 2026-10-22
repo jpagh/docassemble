@@ -1,4 +1,6 @@
 """Tight real-SMTP regression for the managed incoming handler bootstrap."""
+from docassemble_executor.paths import ExecutorPaths
+
 import json
 import os
 from pathlib import Path
@@ -13,7 +15,7 @@ with smtplib.SMTP('127.0.0.1') as smtp:
     smtp.sendmail('sender@helper.test', 'helper@helper.test',
                   'From: sender@helper.test\nTo: helper@helper.test\nSubject: ' + subject + '\n\nactual body')
 for _attempt in range(10):
-    command = ['/usr/share/docassemble/local3.12/bin/python', '/opt/docassemble-fixture/helper_client.py', 'messages']
+    command = [str(ExecutorPaths.from_env().runtime_venv / 'bin/python'), '/opt/docassemble-fixture/helper_client.py', 'messages']
     if os.geteuid() == 0:
         command = ['/usr/sbin/runuser', '-u', 'www-data', '--', *command]
     result = subprocess.run(command, env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1'),

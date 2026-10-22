@@ -2,7 +2,7 @@
 name = "docassemble-runtime-bundle"
 version = "0.0.0"
 description = "Combined core + fixture user packages at runtime revision r2 (fixture upgrade)."
-requires-python = "==3.12.*"
+requires-python = "==3.14.*"
 dependencies = [
   "docassemble.base",
   "docassemble.demo",

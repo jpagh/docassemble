@@ -1,4 +1,5 @@
 """Recovery proof form/HTTP regressions; no real app authentication or mutation."""
+from docassemble.base.managed_python import python_target
 import builtins
 import http.server
 import importlib.util
@@ -262,7 +263,7 @@ def bound_repair(recovery_repair_proof):
     from copy import deepcopy
     proof = recovery_repair_proof
     identity = {'attempt_id': 'FA', 'revision_id': 'F', 'fence': 1, 'host_id': 'H',
-                'runtime_generation': 2, 'bundle_digest': 'failed-bundle', 'target': {'python': '3.12'}}
+                'runtime_generation': 2, 'bundle_digest': 'failed-bundle', 'target': python_target()}
     recovery = {'id': 'FA:core:1', 'attempt': 1, 'result': 'succeeded',
                 'inventory': {'docassemble-webapp': '1.10.14'}, 'core_baseline': {'bundle_digest': 'prior-core'}}
     failed_receipt = {'identity': identity, 'outcome': 'failed-stopped', 'mutation_started': True,
@@ -277,7 +278,7 @@ def bound_repair(recovery_repair_proof):
                'recovery': {'attempt': 1, 'result': 'succeeded', 'finished_at': 'earlier'},
                'verified_revision': 'old-success'}
     before = {'sequence': 1, 'read_errors': [], 'environment': {'desired_revision_id': 'F', 'active_attempt_id': None,
-        **dict.fromkeys(proof.GENERATIONS, 3), 'snapshot': {'target': {'python': '3.12'},
+        **dict.fromkeys(proof.GENERATIONS, 3), 'snapshot': {'target': python_target(),
             'runtime': {'kind': 'core-only', 'attempt_id': 'FA', 'recovery_id': recovery['id'],
                         'inventory': recovery['inventory'], 'core_baseline': recovery['core_baseline']}}},
         'journal': journal, 'applied': {'revision': 'old-success'}, 'desired': {'revision': 'F'},
@@ -296,7 +297,7 @@ def bound_repair(recovery_repair_proof):
               'baseline': deepcopy(before['environment']['snapshot']), 'contributions': [], 'committed_contributions': []}
     result_digest = proof.digest({'inputs': inputs, 'result': result})
     binding = {'candidate_id': 'C', 'revision_id': 'R', 'attempt_id': 'A', 'inputs': inputs, 'result': result,
-               'result_digest': result_digest, 'bundle_digest': 'repair-bundle', 'target': {'python': '3.12'},
+               'result_digest': result_digest, 'bundle_digest': 'repair-bundle', 'target': python_target(),
                'preapprove_audit': before['audit'] + b'1001\tlock --no-config\n1001\tsync --frozen --no-config\n',
                'preapprove_host_generation': 10}
     candidate = {'id': 'C', 'operation': 'repair', 'requester_id': '1', 'state': 'published', 'parent_id': 'F',

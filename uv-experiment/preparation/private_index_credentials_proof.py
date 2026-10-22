@@ -8,6 +8,7 @@ or exposed in an error. Covers duplicate public/private names, declared index
 ordering, transitive bindings, rotation/revocation, redirect rejection and a
 frozen cold-cache install.
 """
+from docassemble.base.managed_python import python_target
 import base64
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -90,7 +91,7 @@ def basic(password):
 
 
 def build_inputs(core, requirement, bindings, indexes):
-    return {'baseline': {'core': core, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    return {'baseline': {'core': core, 'target': python_target(), 'tool': {'uv': '0.12.21'},
                          'config': {'private_indexes': indexes, 'private_bindings': bindings},
                          'desired_inventory': core, 'runtime': {'kind': 'normal', 'inventory': core}},
             'contributions': [], 'requirement': {'declaration': requirement},

@@ -3,6 +3,7 @@
 No Flask/Celery/Redis runtime in this process or disposable container. This is
 NOT normal service/recovery or public browser/API qualification.
 """
+from docassemble.base.managed_python import python_target
 import copy
 import json
 import os
@@ -45,7 +46,7 @@ def main():
     with urllib.request.urlopen('https://pypi.org/pypi/packaging/25.0/json') as response:
         source = next(value['digests']['sha256'] for value in json.load(response)['urls'] if value['packagetype'] == 'sdist')
     core = {'packaging': {'version': '25.0', 'source_digest': source}}
-    baseline = {'core': core, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    baseline = {'core': core, 'target': python_target(), 'tool': {'uv': '0.12.21'},
                 'config': {'index_url': 'https://pypi.org/simple'}, 'desired_inventory': core,
                 'runtime': {'kind': 'normal', 'inventory': core, 'revision_id': 'baseline'}}
     with engine.begin() as connection:

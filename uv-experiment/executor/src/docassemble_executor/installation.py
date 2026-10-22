@@ -6,9 +6,12 @@ once, attempt-bound. Uncertain retry/resumption remain fenced.
 """
 from __future__ import annotations
 
+from docassemble.base.managed_python import python_target
+
 import hashlib
 import json
 import os
+import sys
 import re
 import stat
 import subprocess
@@ -22,7 +25,7 @@ from sqlalchemy import select, update
 
 from .admission import Admission
 from .authority import MutationLock, MutationLockBusy, RuntimeLock
-from .bundles import sha256_file
+from .bundles import sha256_file, verify_python_target
 from .alembic_probe import read_database_revision
 from .config import database_settings, load_config
 from .controller import enter_maintenance, load_context
@@ -509,7 +512,7 @@ class InstallationPoller:
                 raise InstallationFailure('target-mismatch')
         if any(claim.snapshot[key] != trusted[key] for key in ('target', 'tool')):
             raise InstallationFailure('target-mismatch')
-        if trusted['target'] != {'python': '3.12'} or trusted['tool'] != {'uv': UV_VERSION}:
+        if trusted['target'] != python_target() or trusted['tool'] != {'uv': UV_VERSION}:
             raise InstallationFailure('unsupported-target')
         if subprocess.run([self.paths.uv_binary, '--version'], capture_output=True, check=True).stdout.decode().split()[:2] != ['uv', UV_VERSION]:
             raise InstallationFailure('tool-mismatch')
@@ -521,7 +524,8 @@ class InstallationPoller:
             verify_retained(directory, bundle['digest'])
         except Exception:
             raise InstallationFailure('bundle-invalid') from None
-        if (sha256_file(directory / 'pyproject.toml') != bundle['project_digest'] or
+        if (not verify_python_target(directory / 'pyproject.toml', directory / 'uv.lock') or
+                sha256_file(directory / 'pyproject.toml') != bundle['project_digest'] or
                 sha256_file(directory / 'uv.lock') != bundle['lock_digest'] or
                 json.loads((directory / 'inventory.json').read_text()) != bundle['inventory'] or
                 json.loads((directory / 'tool.json').read_text()) != {'uv': UV_VERSION, 'target': trusted['target']}):
@@ -705,7 +709,7 @@ class InstallationPoller:
                 failure = {'stage': 'sync', 'reason': 'sync-failed'}
                 result = sync_frozen(directory, paths.runtime_venv, paths.uv_binary, paths.cache_dir,
                     log_dir=paths.log_dir, env_extra={'UV_OFFLINE': '1', 'UV_NO_CONFIG': '1',
-                                                  'UV_PYTHON': '3.12'})
+                                                  'UV_PYTHON': sys.executable})
                 if result.ok:
                     failure = {'stage': 'inventory', 'reason': 'inventory-mismatch'}
                     if verify_environment(paths.runtime_venv, {name: value['version'] for name, value in

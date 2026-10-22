@@ -13,7 +13,6 @@ from maintenance import wait
 
 NAME = 'da-uv-bypass-proof'
 STATE = '/var/lib/docassemble/managed'
-RUNTIME = '/usr/share/docassemble/local3.12/bin/python'
 SCRIPT = '/opt/docassemble-fixture/bypass_runtime.py'
 CONFIG = '/var/run/docassemble/managed-supervisor/supervisord.conf'
 AUDIT = '/var/log/docassemble-uv-invocations.log'
@@ -93,6 +92,8 @@ def main():
         check(legacy_certbot.returncode == 0 and 'certbot 5.7.0' in legacy_certbot.stdout,
               'unadopted Certbot entrypoint no longer reaches the inherited tool')
         docker.start(NAME, args.image)
+        layout = docker.runtime_layout(NAME)
+        RUNTIME = layout.python
         wait(lambda: http.status('/health_check?ready=1') == 200, 900)
         qualification = status()['consumer_qualification']
         check(qualification['complete'] is True

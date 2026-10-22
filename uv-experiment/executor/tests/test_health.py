@@ -1,8 +1,9 @@
+from docassemble.base.managed_python import python_site_packages
 from docassemble_executor.health import runtime_files_present, runtime_python
 
 
 def make_runtime(venv):
-    packages = venv / "lib" / "python3.12" / "site-packages"
+    packages = venv / python_site_packages()
     (packages / "docassemble" / "webapp").mkdir(parents=True)
     (packages / "docassemble" / "webapp" / "__init__.py").write_text("", encoding="utf-8")
     (packages / "docassemble" / "base").mkdir()

@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor as BasePool
 from datetime import datetime, timezone
 import argparse
 import json
+import shlex
 import os
 from pathlib import Path
 import subprocess
@@ -16,7 +17,6 @@ NAME = 'da-uv-full-maintenance-proof'
 STATE = '/var/lib/docassemble/managed'
 ROOT = '/tmp/da-development-proof'
 SOURCE = '/opt/docassemble-fixture/development-package'
-RUNTIME = '/usr/share/docassemble/local3.12/bin/python'
 
 
 def main():
@@ -63,6 +63,8 @@ def main():
     try:
         evidence.write('image-id.txt', docker.run(['image', 'inspect', args.image, '--format', '{{.Id}}']).stdout)
         docker.start(NAME, args.image)
+        layout = docker.runtime_layout(NAME)
+        RUNTIME = layout.python
         wait(lambda: http.status('/health_check?ready=1') == 200, 900)
         state = status()
         check(state['consumer_qualification']['complete'] is True and not state['consumer_qualification']['pending'],
@@ -199,7 +201,7 @@ def main():
         wait(lambda: 'full-proof-independent-syslog' in docker.read_file(NAME, '/usr/share/docassemble/log/docassemble.log'), 30)
         capture('actual-independent-syslog-during-restricted-recovery')
         docker.exec(NAME, ['redis-cli', 'set', 'proof:shutdown-persistence', 'retained'])
-        docker.exec_shell(NAME, 'rm /usr/share/docassemble/local3.12/lib/python3.12/site-packages/docassemble/webapp/server.py')
+        docker.exec_shell(NAME, 'rm ' + shlex.quote(layout.site_packages + '/docassemble/webapp/server.py'))
         output = docker.exec(NAME, ['da-executor', 'shutdown', '--timeout', '90'], check_result=False)
         evidence.write('broken-runtime-shutdown.txt', output.stdout + output.stderr)
         check(output.returncode == 0, 'infrastructure shutdown depended on the broken application runtime')

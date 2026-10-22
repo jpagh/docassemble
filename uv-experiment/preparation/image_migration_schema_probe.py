@@ -1,4 +1,5 @@
 """Read-only replacement-image and live schema checks before migration proof work."""
+from docassemble.base.managed_python import python_site_packages
 import hashlib
 import json
 from pathlib import Path
@@ -6,7 +7,9 @@ import sys
 import zipfile
 
 
-RUNTIME = Path('/usr/share/docassemble/local3.12')
+from docassemble_executor.paths import ExecutorPaths
+
+RUNTIME = ExecutorPaths.from_env().runtime_venv
 BUNDLES = Path('/usr/share/docassemble/managed/bundles')
 
 
@@ -14,7 +17,7 @@ def check_image_schema(expected: dict[str, str], runtime: Path = RUNTIME,
                        bundles: Path = BUNDLES) -> dict[str, dict[str, str]]:
     """Inspect shipped bytes, not repository modules shadowing an outdated image."""
     evidence = {}
-    installed = runtime / 'lib/python3.12/site-packages'
+    installed = runtime / python_site_packages()
     evidence['runtime'] = {}
     for member, digest in expected.items():
         actual = hashlib.sha256((installed / member).read_bytes()).hexdigest()

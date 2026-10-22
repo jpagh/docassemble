@@ -1,4 +1,5 @@
 """Ticket 21 extension of the real-backup/pinned-uv disposable fixture proof."""
+import sys
 from dataclasses import replace
 import json
 import os
@@ -35,7 +36,7 @@ def with_checkpoints(engine, dump, paths, **kwargs):
     bundle = old['publication']['result']['bundle']
     reference = bundle['digest']
     env = dict(os.environ, UV_PROJECT_ENVIRONMENT=str(paths.runtime_venv), UV_CACHE_DIR=str(backup.ROOT / 'checkpoint-cache'), UV_NO_CACHE='1')
-    backup.run(['uv', 'venv', '--python', '/usr/share/docassemble/local3.12/bin/python', str(paths.runtime_venv)])
+    backup.run(['uv', 'venv', '--python', sys.executable, str(paths.runtime_venv)])
     backup.run(['uv', 'sync', '--frozen', '--offline', '--no-build', '--no-install-project', '--project', str(kwargs['store'] / reference)], env=env)
     local = paths.da_root / 'files'
     local.mkdir(exist_ok=True)

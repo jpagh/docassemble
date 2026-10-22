@@ -290,3 +290,44 @@ def test_startup_unwritable_error_values_exclude_paths_and_users(tmp_path, monke
         assert controller.safe_boot_failure(raised.value) == 'managed boot refused: required managed path is unwritable'
     finally:
         directory.chmod(0o755)
+
+
+@pytest.mark.parametrize('side', ['project', 'lock'])
+def test_boot_real_tomllib_depth_failure_is_terminal(boot_inputs, refused_boot, monkeypatch, side):
+    from docassemble.base.managed_python import python_requires
+    from docassemble_executor.bundles import hash_project
+    paths = replace(boot_inputs, bundles_dir=boot_inputs.state_dir.parent / 'bundles')
+    bundle = paths.runtime_bundle('r1')
+    bundle.mkdir(parents=True)
+    project = bundle / 'pyproject.toml'
+    lock = bundle / 'uv.lock'
+    project.write_text('[project]\nrequires-python=' + json.dumps(python_requires()) + '\n[tool.uv.sources]\n')
+    lock.write_text('requires-python=' + json.dumps(python_requires()))
+    path = project if side == 'project' else lock
+    path.write_text(path.read_text() + '\nunused=' + '[' * 2000 + '0' + ']' * 2000)
+    manifest = json.loads(paths.manifest_file.read_text())
+    manifest['bundles']['runtime-r1'] = hash_project(bundle)
+    paths.manifest_file.write_text(json.dumps(manifest))
+    record = json.loads((paths.state_dir / 'initialized.json').read_text())
+    record.update(target_id=startup.target_id(manifest), bundle_hash=manifest['bundles']['runtime-r1'])
+    (paths.state_dir / 'initialized.json').write_text(json.dumps(record))
+    monkeypatch.setattr(startup, 'decide_startup', lambda *a, **k: 'sync')
+    from docassemble_executor import uvsync
+    monkeypatch.setattr(uvsync, '_sync_frozen', lambda *a, **k: pytest.fail('parser refusal cannot consume executable'))
+    if side == 'lock':
+        # Missing core makes the one recovery attempt terminal. Exit the
+        # long-lived maintenance loop after checking its actual persisted mode.
+        monkeypatch.setattr(controller, 'stop_web', lambda *a: None)
+        monkeypatch.setattr(controller, '_record_error_notification', lambda *a, **k: None)
+        def maintenance_run(executor):
+            assert executor.mode == 'maintenance' and executor.maintenance_only
+            return 1
+        monkeypatch.setattr(controller.Executor, 'run', maintenance_run)
+    assert controller.boot(paths) == 1
+    status = json.loads(refused_boot[0]) if side == 'project' else controller.status(paths)
+    assert not status['normal_ready'] and not status['recovery_available']
+    if side == 'project':
+        assert status['detail'] == 'managed boot refused: validation-failed'
+    else:
+        assert Journal.load(paths.journal_file).phase == 'recovery_failed'
+    assert not (paths.run_dir / 'ready').exists()

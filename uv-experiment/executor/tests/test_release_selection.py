@@ -1,4 +1,5 @@
 """Coherent core release selection, catalog and builder upgrade-mode tests."""
+from docassemble.base.managed_python import python_requires, python_target
 import io
 import json
 import tarfile
@@ -15,7 +16,7 @@ from docassemble.base.managed_release import (coherent_core, core_requirements, 
                                               reject_downgrade, select_release, upgrade_risk_disclosure)
 
 INDEX = 'https://pypi.org/simple'
-TARGET = {'python': '3.12'}
+TARGET = python_target()
 TOOL = {'uv': '0.12.21'}
 PIN = {'version': '1.0.0', 'source_digest': 'a' * 64}
 
@@ -185,14 +186,14 @@ def _diff(before, after):
 
 def _prepare_builder(tmp_path, monkeypatch, calls, *, fail_full=False):
     monkeypatch.setattr(registry_module.os, 'geteuid', lambda: 1000)
-    monkeypatch.setattr(registry_module.sys, 'version_info', (3, 12))
     monkeypatch.setattr(registry_module.subprocess, 'run', lambda *a, **k: SimpleNamespace(stdout=b'uv 0.12.21'))
     requires = {'2.0.0': ['docassemble.base==2.0.0', 'docassemble.demo==2.0.0', 'flask>=3']}
     builder = RegistryBuilder(tmp_path / 'store', release_catalog=FakeCatalog(['1.0.0', '2.0.0'], requires))
 
     def solve(inputs, *, operation, core, requirements, validation=None, **kwargs):
         calls.append({'operation': operation, 'core': core, 'requirements': list(requirements),
-                      'inputs': inputs, 'image_wheels': kwargs.get('image_wheels')})
+                      'inputs': inputs, 'image_wheels': kwargs.get('image_wheels'),
+                      'image_registry_wheels': kwargs.get('image_registry_wheels')})
         if operation == 'upgrade-core':
             inventory = {'docassemble-base': {'version': '2.0.0', 'source_digest': '1' * 64},
                          'docassemble-webapp': {'version': '2.0.0', 'source_digest': '2' * 64},
@@ -208,8 +209,8 @@ def _prepare_builder(tmp_path, monkeypatch, calls, *, fail_full=False):
                 (directory / 'wheels' / (name.replace('-', '_') + '-' + pin['version'] + '-py3-none-any.whl')).write_bytes(
                     b'first-build-only:' + name.encode())
             (directory / 'inventory.json').write_text(json.dumps(inventory))
-            (directory / 'pyproject.toml').write_text('protected core project')
-            (directory / 'uv.lock').write_text('frozen core lock')
+            (directory / 'pyproject.toml').write_text('[project]\nrequires-python=' + json.dumps(python_requires()))
+            (directory / 'uv.lock').write_text('requires-python=' + json.dumps(python_requires()))
             manifest = {p.relative_to(directory).as_posix(): sha256_file(p) for p in directory.rglob('*') if p.is_file()}
             core_digest = digest(manifest)
             (directory / 'manifest.json').write_text(json.dumps(manifest))
@@ -290,11 +291,13 @@ def test_builder_upgrade_rejects_downgrade_and_private_policy(tmp_path, monkeypa
 
 def test_builder_upgrade_runs_under_qualified_image_baseline(tmp_path, monkeypatch):
     calls = []
+    sentinel = object()
     builder = _prepare_builder(tmp_path, monkeypatch, calls)
     builder.image_baseline = tmp_path / 'image-baseline.json'
     inputs = upgrade_inputs()
     inputs['baseline']['image_baseline'] = {'image_target': 'fixture', 'bundle': 'core-r1',
                                             'bundle_digest': 'a' * 64}
+    monkeypatch.setattr('docassemble_executor.image_baseline.load_image_registry_wheels', lambda *a: {'numpy': sentinel})
     monkeypatch.setattr('docassemble_executor.image_baseline.load_image_wheels',
                         lambda *args: (inputs['baseline'], {}))
     result = builder.build(inputs)
@@ -302,3 +305,4 @@ def test_builder_upgrade_runs_under_qualified_image_baseline(tmp_path, monkeypat
     assert calls[0]['image_wheels'] == {}  # Fresh solve, not the old image core.
     assert set(calls[1]['image_wheels']) == set(result['core_bundle']['inventory'])
     assert result['release']['webapp'] == '2.0.0'
+    assert calls[0]['image_registry_wheels'] == calls[1]['image_registry_wheels'] == {'numpy': sentinel}

@@ -15,7 +15,6 @@ NAME = 'da-uv-consumer-proof'
 STATE = '/var/lib/docassemble/managed'
 AUDIT = '/var/log/docassemble-uv-invocations.log'
 CONFIG = '/var/run/docassemble/managed-supervisor/supervisord.conf'
-RUNTIME = '/usr/share/docassemble/local3.12/bin/python'
 
 
 def main():
@@ -63,6 +62,8 @@ Path('/tmp/consumer-completed').write_text('accepted runtime job completed')
     try:
         evidence.write('image-id.txt', docker.run(['image', 'inspect', args.image, '--format', '{{.Id}}']).stdout)
         docker.start(NAME, args.image)
+        layout = docker.runtime_layout(NAME)
+        RUNTIME = layout.python
         wait(lambda: http.status('/health_check?ready=1') == 200, 900)
         check(status()['consumer_qualification']['complete'] is True and status()['normal_ready'], 'full integration is not ready')
         check(docker.exec(NAME, ['supervisorctl', '-c', CONFIG, 'status']).returncode == 0, 'independent Supervisor unavailable')

@@ -106,7 +106,12 @@ def test_failed_frozen_apply_records_recovery_before_attempt_terminal(recovery, 
     poller.installation.claim_installation = lambda _: claim
     monkeypatch.setattr(poller, '_gates', lambda _: poller.store)
     monkeypatch.setattr('docassemble_executor.installation.enter_maintenance', lambda _: True)
-    monkeypatch.setattr('docassemble_executor.installation.sync_frozen', lambda *a, **k: SimpleNamespace(ok=False))
+    def refuse_sync(*a, **k):
+        import sys
+        assert k['env_extra']['UV_PYTHON'] == sys.executable
+        from docassemble_executor.uvsync import SyncResult
+        return SyncResult(False, [], None, 0, output_tail='retained project and lock Python target mismatch')
+    monkeypatch.setattr('docassemble_executor.installation.sync_frozen', refuse_sync)
     monkeypatch.setattr('docassemble_executor.published.close_published', lambda _: None)
     assert poller.run_once() == 'reported'
     receipt = Journal.load(poller.paths.journal_file).attempt_result

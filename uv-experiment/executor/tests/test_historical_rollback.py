@@ -1,4 +1,5 @@
 """No-solve retained material, rollback schema policy, and no older setup."""
+from docassemble.base.managed_python import python_target, python_requires
 import copy
 import json
 from types import SimpleNamespace
@@ -24,8 +25,11 @@ def bundle_at(tmp_path, *, incompatible='bad', revision='old'):
         wheel.writestr('docassemble/webapp/alembic/versions/old.py', 'revision = ' + repr(revision))
     inventory = {'docassemble-webapp': {'version': '1.0', 'source_digest': 'a' * 64}}
     for filename, value in {'inventory.json': json.dumps(inventory), 'installed-material.json': '{}',
-                            'tool.json': json.dumps({'uv': '0.12.21', 'target': {'python': '3.12'}}),
-                            'pyproject.toml': '[project]', 'uv.lock': '# exact'}.items():
+                            'tool.json': json.dumps({'uv': '0.12.21', 'target': python_target()}),
+                            'pyproject.toml': '[project]\nrequires-python = ' + json.dumps(python_requires()),
+                            'uv.lock': 'requires-python = ' + json.dumps(python_requires()),
+                            'solve-project.toml': '[project]\nrequires-python = ' + json.dumps(python_requires()),
+                            'solve.lock': 'requires-python = ' + json.dumps(python_requires())}.items():
         (directory / filename).write_text(value)
     manifest = {path.relative_to(directory).as_posix(): sha256_file(path) for path in directory.rglob('*') if path.is_file()}
     reference = digest(manifest)
@@ -64,7 +68,7 @@ def test_unreadable_database_and_retained_inventory_fail_closed(tmp_path, monkey
 @pytest.fixture
 def restore(tmp_path, monkeypatch):
     directory, bundle = bundle_at(tmp_path)
-    baseline = {'core': bundle['inventory'], 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    baseline = {'core': bundle['inventory'], 'target': python_target(), 'tool': {'uv': '0.12.21'},
                 'image_baseline': {'image_target': 'image'}, 'config': {'index_url': 'https://pypi.org/simple'},
                 'runtime': {'kind': 'normal', 'inventory': {}}, 'desired_inventory': {}}
     historical = dict(baseline, publication={'result': {'bundle': bundle}}, contributions=[])
@@ -131,3 +135,32 @@ def test_rollback_and_later_ordinary_revision_skip_setup(tmp_path, monkeypatch):
         claim = SimpleNamespace(revision_id='restored', snapshot={'schema_mode': 'unchanged',
             'publication': {'inputs': {'change_operation': operation}, 'result': {'bundle': bundle}}})
         assert published.prepare_published(paths, claim)['schema_verified']
+
+
+def test_matching_historical_and_current_old_target_still_refuses(restore, monkeypatch):
+    import sys
+    builder, inputs, _, calls = restore
+    inputs['baseline']['target'] = {'python': '3.12'}
+    inputs['rollback']['snapshot']['target'] = {'python': '3.12'}
+    monkeypatch.setattr(sys, 'version_info', (3, 14, 4))
+    with pytest.raises(PreparationError, match='qualified non-root Python target'):
+        builder.build(inputs)
+    assert calls == []
+
+
+def test_rehashed_foreign_rollback_project_and_lock_refuse_without_solve(restore):
+    builder, inputs, directory, calls = restore
+    for name in ('pyproject.toml', 'solve-project.toml'):
+        (directory / name).write_text('[project]\nrequires-python="==3.12.*"')
+    for name in ('uv.lock', 'solve.lock'):
+        (directory / name).write_text('requires-python="==3.12.*"')
+    manifest = {p.relative_to(directory).as_posix(): sha256_file(p)
+                for p in directory.rglob('*') if p.is_file() and p.name != 'manifest.json'}
+    reference = digest(manifest)
+    (directory / 'manifest.json').write_text(json.dumps(manifest))
+    directory.rename(builder.store / reference)
+    bundle = inputs['rollback']['snapshot']['publication']['result']['bundle']
+    bundle.update(digest=reference, project_digest=manifest['pyproject.toml'], lock_digest=manifest['uv.lock'])
+    with pytest.raises(PreparationError, match='historical bundle identity mismatch'):
+        builder.build(inputs)
+    assert calls == []

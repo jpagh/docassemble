@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 from pathlib import Path
 import sys
 import time
@@ -16,7 +17,6 @@ from harness import ContainerHttp, Docker, Evidence, Failure, check  # noqa: E40
 NAME = 'da-uv-boot-proof'
 SNAPSHOT = 'da-uv-boot-snapshot:local'
 STATE = '/var/lib/docassemble/managed'
-RUNTIME = '/usr/share/docassemble/local3.12'
 AUDIT = '/var/log/docassemble-uv-invocations.log'
 
 
@@ -69,11 +69,14 @@ def main() -> int:
     try:
         evidence.write('image-id.txt', docker.run(['image', 'inspect', args.image, '--format', '{{.Id}}']).stdout)
         docker.start(NAME, args.image)
+        layout = docker.runtime_layout(NAME)
+        RUNTIME = layout.venv
         wait(docker, lambda p: p.get('normal_ready') is True)
         evidence.write('manifest.json', docker.read_file(NAME, '/usr/share/docassemble/managed/bundles/manifest.json'))
         # Audit is emitted by the wrapper which execs the actual pinned uv.
         before = counts(docker)
-        check(before[0] == 21, 'only seven locks and fourteen explicit wheel builds at image construction may resolve: ' + str(before))
+        # Image construction: 7 locks, 14 core/variant builds, 14 attested producer builds.
+        check(before[0] == 7 + 14 + 14, 'only 7 locks + 14 core/variant wheel builds + 14 attested producer builds at image construction may resolve: ' + str(before))
         check(before[1] == 6, 'five image frozen syncs plus one fresh boot sync expected: ' + str(before))
         passed('fresh-true-frozen', 'fresh fixture seeded from retained full lock; HTTP ready after verified initialization')
         python = '/usr/share/docassemble/executor-venv/bin/python'
@@ -127,7 +130,7 @@ def main() -> int:
         passed('pending-true-frozen', 'exact r2 wheel sync ran unprivileged; zero boot resolver/build calls')
         for mode in ('true', 'initial', 'false'):
             docker.start(NAME, SNAPSHOT, network='none', env={'DAUPDATEONSTART': mode, 'DAALLOWUPDATES': 'false'},
-                         cold_setup='rm -rf /tmp/da-sentinels ' + RUNTIME + '/lib/python3.12/site-packages/docassemble/webapp')
+                         cold_setup='rm -rf /tmp/da-sentinels ' + shlex.quote(layout.site_packages + '/docassemble/webapp'))
             payload = wait(docker, lambda p: p.get('recovery_available') is True)
             check(payload.get('normal_ready') is False and payload.get('recovery_attempt') == 1,
                   'safety recovery did not remain restricted')
@@ -137,7 +140,7 @@ def main() -> int:
             ('fresh-false', args.image, {'DAUPDATEONSTART': 'false'}, '', 'verified'),
             ('split-role', SNAPSHOT, {'CONTAINERROLE': 'web'}, '', 'all-role'),
             ('read-only-configured', SNAPSHOT, {'DAREADONLYFILESYSTEM': 'true'}, '', 'writable'),
-            ('unwritable-runtime', SNAPSHOT, {}, 'chmod a-w ' + RUNTIME, 'unwritable'),
+            ('unwritable-runtime', SNAPSHOT, {}, 'chmod a-w ' + shlex.quote(RUNTIME), 'unwritable'),
             ('unwritable-state', SNAPSHOT, {}, 'chmod a-w ' + STATE, 'unwritable'),
             ('invalid-startup-mode', SNAPSHOT, {'DAUPDATEONSTART': 'sometimes'}, '', 'DAUPDATEONSTART'),
             ('direct-flag-off', SNAPSHOT, {}, 'export DA_UV_MANAGED=false; exec /usr/share/docassemble/executor-venv/bin/da-executor boot', 'disabled'),
@@ -158,7 +161,7 @@ def main() -> int:
             check(docker.exec_shell(NAME, 'test ! -e /var/run/docassemble/ready && test ! -e /tmp/da-sentinels', check_result=False).returncode == 0,
                   'failed gate activated user code or readiness')
             check(ContainerHttp(docker, NAME).status('/health_check') == 200, 'independent liveness unavailable')
-            check(counts(docker)[0] == 21, 'failed gate invoked resolver/build')
+            check(counts(docker)[0] == before[0], 'failed gate invoked resolver/build')
             passed(name, 'static independent failure status; no user imports or normal readiness')
         for record in ('desired.json', 'lifecycle.json'):
             docker.start(NAME, SNAPSHOT, env={'DA_UV_MANAGED': 'false'}, cold_setup='echo corrupt > ' + STATE + '/' + record)

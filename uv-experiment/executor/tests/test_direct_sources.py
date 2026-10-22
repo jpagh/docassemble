@@ -1,4 +1,5 @@
 """Direct wheel/archive URLs: declaration identity, redaction, fetch and recording."""
+from docassemble.base.managed_python import python_target
 from copy import deepcopy
 import hashlib
 import io
@@ -43,7 +44,7 @@ def inputs(declaration=DECLARATION):
     requirement, source, _ = parse_direct_requirement(declaration)
     return {'requirement': requirement.__dict__, 'direct_source': source, 'contributions': [],
         'ownership_effects': {}, 'baseline': {'core': {}, 'config': {'index_url': 'https://pypi.org/simple'},
-        'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'}, 'desired_inventory': {},
+        'target': python_target(), 'tool': {'uv': '0.12.21'}, 'desired_inventory': {},
         'runtime': {'kind': 'normal', 'inventory': {}}}}
 
 

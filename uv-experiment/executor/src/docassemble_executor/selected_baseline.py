@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .bundles import sha256_file
+from .bundles import sha256_file, verify_python_target
 from .paths import ExecutorPaths
 from .preparation import PreparationError
 from .registry_builder import verify_retained
@@ -46,6 +46,8 @@ def selected_directory(store: Path, selected: dict) -> Path:
     bundle = selected['core_bundle']
     directory = store / bundle['digest']
     verify_retained(directory, bundle['digest'])
+    if not verify_python_target(directory / 'pyproject.toml', directory / 'uv.lock'):
+        raise PreparationError('selected core material changed')
     if (json.loads((directory / 'inventory.json').read_text()) != bundle['inventory'] or
             sha256_file(directory / 'pyproject.toml') != bundle['project_digest'] or
             sha256_file(directory / 'uv.lock') != bundle['lock_digest']):

@@ -1,4 +1,5 @@
 """Image-qualified source-policy gate: operator private baseline and effective comparison."""
+from docassemble.base.managed_python import python_target
 import json
 
 import pytest
@@ -14,7 +15,7 @@ PRIVATE = {'private_indexes': {'alpha': 'https://packages.invalid/private/simple
 
 def baseline_document(config):
     return {'format': 1, 'baseline': {
-        'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'}, 'config': config,
+        'target': python_target(), 'tool': {'uv': '0.12.21'}, 'config': config,
         'core': {'core': {'version': '1.0', 'source_digest': 'a' * 64}},
         'image_baseline': {'image_target': 'fixture', 'bundle': 'runtime-r1', 'bundle_digest': 'b' * 64}}}
 
@@ -49,10 +50,10 @@ def test_configured_baseline_rejects_invalid_or_secret_source_policy(tmp_path, m
 
 
 def qualified_inputs(config, *, baseline_config, requirement='example>=1', change_operation=None):
-    inputs = {'baseline': {'core': {}, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    inputs = {'baseline': {'core': {}, 'target': python_target(), 'tool': {'uv': '0.12.21'},
                            'config': baseline_config, 'image_baseline': {'image_target': 'fixture'}},
               'ownership_effects': {}, 'requirement': {'normalized_name': requirement.split('>')[0]}}
-    baseline = {'core': {}, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    baseline = {'core': {}, 'target': python_target(), 'tool': {'uv': '0.12.21'},
                 'config': config, 'image_baseline': {'image_target': 'fixture'}}
     if change_operation:
         inputs['change_operation'] = change_operation
@@ -88,3 +89,18 @@ def test_require_qualified_inputs_accepts_public_config_import_on_public_baselin
     inputs, baseline = qualified_inputs(PUBLIC, baseline_config=PUBLIC, change_operation='config')
     inputs['config_import']['snapshot'] = dependency_snapshot({'python packages': ['example>=1']}, environ={})
     require_qualified_inputs(inputs, baseline)
+
+
+@pytest.mark.parametrize('target', [None, {}, [], {'python': ['3.14']}, {'python': '3.12'},
+    {'python': '3.13'}, {'python': '>=3.12'}, {'python': '3.14.4'}, {'python': '3.14', 'extra': 'key'}])
+def test_configured_baseline_exact_observed_target_refusal(tmp_path, monkeypatch, target):
+    import sys
+    monkeypatch.setattr(sys, 'version_info', (3, 14, 4))
+    descriptor = tmp_path / 'baseline.json'
+    document = baseline_document(PUBLIC)
+    document['baseline']['target'] = target
+    descriptor.write_text(json.dumps(document))
+    monkeypatch.setenv('DA_QUALIFIED_IMAGE_BASELINE', str(descriptor))
+    monkeypatch.delenv('CONTAINERROLE', raising=False)
+    with pytest.raises(PreparationError, match='invalid qualified image baseline'):
+        configured_baseline()

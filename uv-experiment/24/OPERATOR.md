@@ -6,7 +6,52 @@ Use the final run's `summary.json`, validation exits and logs, not this prose, a
 the result. A missing/failed gate means **not qualified**. Never reuse fixture
 credentials, attach these proofs to a production database, or publish their ports.
 
-## Repeatable run
+## Ticket 25: fresh 3.14 qualification (operator-owned, pending)
+
+Ticket 24 evidence certifies only its historical 3.12.14 fixture. Do not reuse
+its locks, inventories, IDs or evidence for this retarget. No 3.14 image/matrix
+result is recorded by the implementation worker. Keep the Gunicorn topology;
+stock Apache/mod_wsgi and `local3.14` are not the managed runtime.
+
+Use pinned uv 0.12.21, provision `uv python install 3.14.4` and check the managed
+executable's exact patch before host checks. For all three fresh images preflight
+with protected `/usr/share/docassemble/executor-venv/bin/python`, never system or
+mutable runtime Python: observe `sys.version_info[:3] == (3, 14, 4)`, resolved
+executor/runtime executable equality beneath `UV_PYTHON_INSTALL_DIR`, manifest
+patch/platform/libc, exact `==3.14.*` projects/locks, compatible retained wheels,
+and baseline `{'python': '3.14'}`. Default runtime must be distinct
+`/usr/share/docassemble/managed-runtime3.14`; stock `local3.14` remains 1.10.7.
+Check rendered cron/Exim have no `@MANAGED_RUNTIME@`. Replacements change core
+release, not Python. Verify actual core 1.10.13 / 1.10.12 / synthetic 1.10.16.
+
+Run independent full native/PostgreSQL/act/mypy/ruff gates, then rebuild fresh:
+
+```sh
+# All raw output belongs in a fresh LOCAL excluded evidence directory.
+# Inspect disk before each build; never prune unrelated Docker resources.
+docker build --no-cache --progress=plain -f uv-experiment/fixture/Dockerfile \
+  --build-arg DA_REPO_COMMIT="$(git rev-parse HEAD)+ticket-25-worktree" \
+  -t da-uv-24-qual:local .
+for pair in old:1.10.12 new:1.10.16; do
+  docker build --no-cache --progress=plain -f uv-experiment/fixture/Dockerfile.replacement-proof \
+    --build-arg PROOF_BASE_IMAGE=da-uv-24-qual:local \
+    --build-arg RELEASE="${pair#*:}" -t "da-uv-24-${pair%:*}:local" .
+done
+# Schedule outside the protected-service daily backup/restart window.
+PROOF_OLD_IMAGE=da-uv-24-old:local PROOF_NEW_IMAGE=da-uv-24-new:local \
+python3 uv-experiment/run-qualification.py --image da-uv-24-qual:local \
+  --evidence uv-experiment/25/evidence/run-YOUR-NEW-UTC-STAMP
+```
+
+First verify the destination is excluded with `git check-ignore`; never stage
+raw evidence. Require exit 0, 30/30 phase exits 0, `missing_phases: []`,
+`sources_and_protected_services_unchanged: true`, `container_gates_passed: true`,
+separate host gates and independent review. Never accept subsets or splice runs.
+The local excluded `.act/checks.yml` now pins uv 0.12.21 and explicitly provisions
+and verifies 3.14.4; it is not tracked source in this checkout. Do not assume the
+old 3.12 images still exist. Preserve all warnings below.
+
+## Historical ticket-24 repeatable run
 
 Prerequisites: Docker on Linux with the pinned base's platform support, Python
 3.10+ on the host, `uv`, `uvx`, and `act`. Reserve loopback 18080/18081 and the

@@ -13,7 +13,6 @@ from maintenance import wait
 
 NAME = 'da-uv-worker-proof'
 CONFIG = '/var/run/docassemble/managed-supervisor/supervisord.conf'
-RUNTIME = '/usr/share/docassemble/local3.12/bin/python'
 
 
 def main():
@@ -54,6 +53,8 @@ def main():
         evidence.note('PASS ' + label)
     try:
         docker.start(NAME, args.image)
+        layout = docker.runtime_layout(NAME)
+        RUNTIME = layout.python
         wait(lambda: http.status('/health_check?ready=1') == 200, 900)
         qualification = status()['consumer_qualification']
         check(qualification['complete'] is True and qualification['worker_broker_proof'] == 'redis-prefork'

@@ -42,6 +42,10 @@ if os.fork() == 0:
 def test_root_cannot_select_itself_as_third_party_builder(tmp_path, monkeypatch):
     from docassemble_executor.uvsync import sync_frozen
 
+    from docassemble.base.managed_python import python_requires
+    import json
+    (tmp_path / 'pyproject.toml').write_text('[project]\nrequires-python=' + json.dumps(python_requires()))
+    (tmp_path / 'uv.lock').write_text('requires-python=' + json.dumps(python_requires()))
     monkeypatch.setenv('DA_ENVIRONMENT_USER', 'root')
     with pytest.raises(ValueError, match='never run as root'):
         sync_frozen(tmp_path, tmp_path / 'venv', 'uv', tmp_path / 'cache')

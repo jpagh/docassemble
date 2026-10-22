@@ -1,5 +1,6 @@
 # ruff: noqa: F811 -- explicit pytest fixture registration.
 """Real retained private-source attestation through both PostgreSQL schema paths."""
+from docassemble.base.managed_python import python_target
 import copy
 import json
 
@@ -18,7 +19,7 @@ def test_private_index_retained_readiness_requires_redacted_binding_preview(prot
     verify_retained(retained, ready['bundle']['digest'])
     sources = json.loads((retained / 'private-sources.json').read_text())
     core = {'private-core': ready['bundle']['inventory']['private-core']}
-    baseline = {'core': core, 'target': {'python': '3.12'}, 'tool': {'uv': '0.12.21'},
+    baseline = {'core': core, 'target': python_target(), 'tool': {'uv': '0.12.21'},
                 'config': {'private_indexes': {'alpha': sources[0]['url']},
                            'private_bindings': {name: 'alpha' for name in ready['bundle']['inventory']}},
                 'desired_inventory': core, 'runtime': {'kind': 'normal', 'inventory': core}}

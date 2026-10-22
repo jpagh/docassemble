@@ -1,13 +1,16 @@
 """Bounded independent public-registry preparation, never live application.
 
-Python 3.12 / uv 0.12.21 public PyPI or opt-in offline private distribution
+Image-provisioned Python / uv 0.12.21 public PyPI or opt-in offline private distribution
 snapshots only. Preparation container and credential promotion are separate.
 """
 from __future__ import annotations
 
+from docassemble.base.managed_python import python_target, python_requires
+
 import errno
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -20,10 +23,12 @@ from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .private_index import PrivateIndexSnapshot
+    from .image_baseline import ImageRegistryWheel
 
+from packaging.tags import sys_tags
 from packaging.utils import canonicalize_name, parse_wheel_filename
 
-from .bundles import sha256_file
+from .bundles import sha256_file, verify_python_target
 from .inventory import inspect_environment, verify_environment, wheel_payload_material
 from .preparation import Preparation, PreparationError, digest, parse_registry_requirement
 from docassemble.base.managed_git import parse_supported_requirement, registry_declaration
@@ -39,6 +44,16 @@ UV_VERSION = '0.12.21'
 INDEX = 'https://pypi.org/simple'
 
 
+class _RefuseRegistryRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise PreparationError('unsupported artifact redirect')
+
+
+def _open_registry_artifact(url: str) -> Any:
+    # Refuse at the redirect boundary, before any off-lock request is issued.
+    return urllib.request.build_opener(_RefuseRegistryRedirects()).open(url, timeout=60)
+
+
 def validate_public_policy(inputs: dict[str, Any]) -> None:
     """Reject unsupported sources before writing container inputs or invoking uv."""
     baseline = inputs['baseline']
@@ -48,7 +63,7 @@ def validate_public_policy(inputs: dict[str, Any]) -> None:
         config = config_import_policy(inputs['config_import']['snapshot'], baseline['config'])
         if 'private_indexes' in config or 'private_bindings' in config:
             raise PreparationError('private indexes require operator credential references')
-    if (baseline['target'] != {'python': '3.12'} or baseline['tool'] != {'uv': UV_VERSION}
+    if (baseline['target'] != python_target() or baseline['tool'] != {'uv': UV_VERSION}
             or config != {'index_url': INDEX}):
         raise PreparationError('unsupported builder target, tool or index policy')
     declarations = [row['declaration'] for row in inputs['contributions']]
@@ -190,16 +205,25 @@ class RegistryBuilder:
             return None
         return PrivateIndexSnapshot(load_operator_references(self.index_credential_root), ca_file=self.index_ca_file)
 
-    def _run(self, arguments: list[str], directory: Path, cache: Path, venv: Path) -> None:
+    def _run(self, arguments: list[str], directory: Path, cache: Path, venv: Path,
+             *, install_into_venv: bool = False) -> None:
         # Do not inherit UV/PIP configuration, credentials or live runtime paths.
         env = {'PATH': os.environ.get('PATH', ''), 'HOME': str(directory),
                'UV_CACHE_DIR': str(cache), 'UV_PROJECT_ENVIRONMENT': str(venv),
                'UV_PYTHON_DOWNLOADS': 'never', 'UV_NO_PROGRESS': '1'}
+        python = sys.executable
+        if install_into_venv:
+            target = venv / 'bin/python'
+            if (arguments[:2] != ['pip', 'install'] or venv.parent != directory.parent
+                    or venv.name != 'disposable-venv' or venv.is_symlink() or not target.is_file()
+                    or target.resolve() != Path(sys.executable).resolve()):
+                raise PreparationError('invalid disposable installation interpreter')
+            python = str(target)
         if self.private_snapshot is not None:
             arguments = [*arguments, '--default-index', (directory / 'private-indexes' / 'snapshot').as_uri() + '/']
             if '--offline' not in arguments:
                 arguments.append('--offline')
-        completed = subprocess.run([self.uv_binary, *arguments, '--python', sys.executable], cwd=directory, env=env,
+        completed = subprocess.run([self.uv_binary, *arguments, '--python', python], cwd=directory, env=env,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=600)
         if completed.returncode:
             # Raw uv/build output can contain credentials; never persist or expose it.
@@ -209,6 +233,8 @@ class RegistryBuilder:
         if inputs.get('change_operation') == 'rollback':
             return self._build_rollback(inputs)
         baseline = inputs['baseline']
+        if baseline['target'] != python_target():
+            raise PreparationError('unsupported builder target, tool or index policy')
         self.private_snapshot = self._resolve_private_snapshot(inputs)
         if self.private_snapshot is None:
             validate_public_policy(inputs)
@@ -217,8 +243,6 @@ class RegistryBuilder:
             validate_private_policy(inputs)
         # Refuse unresolved credential references before invoking any tooling.
         authorizations = self._git_authorizations(inputs)
-        if sys.version_info[:2] != (3, 12):
-            raise PreparationError('unsupported builder target, tool or index policy')
         if os.geteuid() == 0:
             raise PreparationError('preparation builds require a dedicated non-root identity')
         version = subprocess.run([self.uv_binary, '--version'], capture_output=True, check=True).stdout.decode()
@@ -248,40 +272,44 @@ class RegistryBuilder:
             requirements.append(inputs['requirement']['declaration'])
         requirements = [registry_declaration(value) for value in requirements]
         image_wheels: dict[str, Path] = {}
+        image_registry_wheels: dict[str, ImageRegistryWheel] = {}
         if baseline.get('image_baseline'):
             from docassemble.base.managed_qualification import require_qualified_inputs
-            from .image_baseline import load_image_wheels
+            from .image_baseline import load_image_wheels, load_image_registry_wheels
             from .paths import ExecutorPaths
             if self.image_baseline is None:
                 raise PreparationError('image baseline requires explicit operator configuration')
             trusted, image_wheels = load_image_wheels(self.image_baseline, ExecutorPaths.from_env())
             require_qualified_inputs(inputs, trusted)
+            image_registry_wheels = load_image_registry_wheels(self.image_baseline, ExecutorPaths.from_env())
             if baseline.get('selected_baseline'):
                 from .selected_baseline import selected_wheels
                 image_wheels = selected_wheels(self.store, baseline['selected_baseline'])
         if operation == 'upgrade':
             return self._build_upgrade(inputs, baseline, requirements, local_artifacts,
-                                       direct_sources, authorizations)
+                                       direct_sources, authorizations, image_registry_wheels)
         core = baseline['core']
         requirements.extend(name + '==' + value['version'] for name, value in core.items())
         validate_artifact_requirements(requirements, local_artifacts)
         return self._solve(inputs, operation=operation, core=core, requirements=requirements,
                            image_wheels=image_wheels, local_artifacts=local_artifacts,
                            direct_sources=direct_sources, authorizations=authorizations,
+                           image_registry_wheels=image_registry_wheels,
                            seed_parent='required' if operation in ('update', 'remove', 'migration') else None)
 
     def _solve(self, inputs: dict[str, Any], *, operation: str, core: dict[str, Any],
                requirements: list[str], image_wheels: dict[str, Path],
                local_artifacts: dict[str, tuple[dict[str, str], Path]], direct_sources: dict[str, dict],
                authorizations: dict, seed_parent: str | None, validation: dict[str, Any] | None = None,
-               validate_result: bool = True, materialize: bool = False) -> dict[str, Any]:
+               validate_result: bool = True, materialize: bool = False,
+               image_registry_wheels: dict[str, ImageRegistryWheel] | None = None) -> dict[str, Any]:
         baseline = inputs['baseline']
         self.store.mkdir(parents=True, exist_ok=True, mode=0o700)
         with tempfile.TemporaryDirectory(prefix='prepare-') as temporary:
             work = Path(temporary)
             project = work / 'project'
             project.mkdir()
-            header = '[project]\nname = "managed-candidate"\nversion = "0"\nrequires-python = "==3.12.*"\ndependencies = '
+            header = '[project]\nname = "managed-candidate"\nversion = "0"\nrequires-python = "' + python_requires() + '"\ndependencies = '
             policy = '\n[tool.uv]\npackage = false\n\n[[tool.uv.index]]\nurl = "https://pypi.org/simple"\ndefault = true\n'
             cache, venv = work / 'cache', work / 'disposable-venv'
             (project / 'sources').mkdir()
@@ -329,6 +357,14 @@ class RegistryBuilder:
                 if retained_parent:
                     parent = self.store / parent_digest
                     verify_retained(parent, parent_digest)
+                    try:
+                        parent_matches = (verify_python_target(parent / 'solve-project.toml', parent / 'solve.lock')
+                            and json.loads((parent / 'tool.json').read_text()) ==
+                            {'uv': UV_VERSION, 'target': python_target()})
+                    except (OSError, ValueError, TypeError):
+                        parent_matches = False
+                    if not parent_matches:
+                        raise PreparationError('unsupported builder target, tool or index policy')
                     shutil.copyfile(parent / 'solve.lock', project / 'uv.lock')
                     if operation == 'update':
                         lock_arguments.extend(['--upgrade-package', inputs['requirement']['normalized_name']])
@@ -341,11 +377,13 @@ class RegistryBuilder:
                 for name in sorted(core):
                     lock_arguments.extend(['--upgrade-package', name])
             self._run(lock_arguments, project, cache, venv)
+            if not verify_python_target(project / 'pyproject.toml', project / 'uv.lock'):
+                raise PreparationError('unsupported builder target, tool or index policy')
             shutil.copyfile(project / 'uv.lock', project / 'solve.lock')
             shutil.copyfile(project / 'pyproject.toml', project / 'solve-project.toml')
             lock = tomllib.loads((project / 'uv.lock').read_text())
             inventory: dict[str, Any] = {}
-            bindings = list(image_bindings + git_bindings)
+            bindings = []
             artifacts = [sha256_file(path) for path in (project / 'sources').iterdir()] + [
                 sha256_file(path) for path in git_wheels.values()] + [sha256_file(path) for path in image_wheels.values()] + [
                 identity['digest'] for identity, _ in local_artifacts.values()]
@@ -368,8 +406,18 @@ class RegistryBuilder:
                 if name in inventory:
                     raise PreparationError('unsupported multi-version target lock')
                 inventory[name] = {'version': package['version'], 'source_digest': ''}
-            self._run(['sync', '--frozen', '--no-config'], project, cache, venv)
+            reused = self._reuse_registry_wheels(lock, image_registry_wheels or {}, project)
+            sync_arguments = ['sync', '--frozen', '--no-config']
+            for name in sorted(reused):
+                sync_arguments.extend(['--no-install-package', name])
+            self._run(sync_arguments, project, cache, venv)
+            if reused:
+                self._run(['pip', 'install', '--no-deps', '--no-index', '--no-build', '--offline', '--no-config',
+                           *[str(project / 'wheels' / reused[name].path.name) for name in sorted(reused)]],
+                          project, cache, venv, install_into_venv=True)
             actual = inspect_environment(venv)
+            if any(actual.get(name) != wheel.origin['version'] for name, wheel in reused.items()):
+                raise PreparationError('substituted registry inventory mismatch')
             validate_artifact_requirements(requirements, metadata_artifacts, actual)
             if image_wheels or local_artifacts or git_wheels or materialize:
                 # Universal locks can contain non-Linux marker branches. The
@@ -379,22 +427,37 @@ class RegistryBuilder:
                 raise PreparationError('resolved inventory mismatch')
             for package in lock['package']:
                 name = canonicalize_name(package['name'])
-                if name not in inventory and name not in local_artifacts:
-                    continue
-                if name in git_sources:
-                    inventory[name]['source_digest'] = git_source_digest(git_sources[name])
-                    continue
-                if name in image_wheels:
-                    # Selected core provenance may name an sdist; the verified
-                    # retained wheel, not a registry re-solve, supplies its bytes.
-                    inventory[name]['source_digest'] = core[name]['source_digest']
-                    continue
-                # Retain an immutable source artifact; build from it with independent uv tooling.
                 local = local_artifacts.get(name)
+                local = local if local and package['source'] == {'path': 'artifacts/' + local[0]['filename']} else None
+                if name not in inventory and local is None:
+                    continue
+                git_wheel = git_wheels.get(name)
+                image_wheel = image_wheels.get(name)
+                if git_wheel and package['source'] == {'path': 'wheels/' + git_wheel.name}:
+                    source_identity = git_sources.get(name)
+                    if source_identity is None:
+                        raise PreparationError('built metadata identity mismatch')
+                    inventory[name]['source_digest'] = git_source_digest(source_identity)
+                    bindings.append(json.dumps(name) + ' = { path = ' + json.dumps('wheels/' + git_wheel.name) + ' }')
+                    continue
+                if image_wheel and package['source'] == {'path': 'wheels/' + image_wheel.name}:
+                    # Only an actually path-bound core row takes image authority.
+                    # Registry-resolved transitive intent retains its original sdist.
+                    core_identity = core.get(name)
+                    if core_identity is None or 'source_digest' not in core_identity:
+                        raise PreparationError('exact core source baseline changed')
+                    inventory[name]['source_digest'] = core_identity['source_digest']
+                    bindings.append(json.dumps(name) + ' = { path = ' + json.dumps('wheels/' + image_wheel.name) + ' }')
+                    continue
+                # Retain the source actually selected by the lock, not caller intent.
+                compatible_wheel = None
+                if package['source'] == {'registry': INDEX}:
+                    tags = set(sys_tags())
+                    compatible_wheel = next((wheel for wheel in package.get('wheels', []) if
+                        parse_wheel_filename(Path(urllib.parse.urlsplit(wheel.get('url', '')).path).name)[3] & tags), None)
                 source = {'path': 'artifacts/' + local[0]['filename'], 'hash': 'sha256:' + local[0]['digest']} if local else package.get('sdist')
                 if source is None:
                     wheels = package.get('wheels', [])
-                    from packaging.tags import sys_tags
                     tags = set(sys_tags())
                     source = next((wheel for wheel in wheels if
                         parse_wheel_filename(Path(urllib.parse.urlsplit(wheel.get('url', wheel.get('path', ''))).path).name)[3] & tags), None)
@@ -416,7 +479,7 @@ class RegistryBuilder:
                 else:
                     if url.scheme != 'https' or url.hostname != 'files.pythonhosted.org' or url.query or url.username:
                         raise PreparationError('unsupported artifact URL')
-                    with urllib.request.urlopen(source['url'], timeout=60) as response:
+                    with _open_registry_artifact(source['url']) as response:
                         if urllib.parse.urlsplit(response.geturl()).hostname != 'files.pythonhosted.org':
                             raise PreparationError('unsupported artifact redirect')
                         destination.write_bytes(response.read())
@@ -426,8 +489,30 @@ class RegistryBuilder:
                 if name in inventory:
                     inventory[name]['source_digest'] = source_hash
                 artifacts.append(source_hash)
-                if filename.endswith('.whl'):
+                if name in reused:
+                    from .image_baseline import validate_registry_wheel
+                    validate_registry_wheel(project / 'wheels' / reused[name].path.name,
+                                            dict(reused[name].origin, wheel_hash=reused[name].wheel_hash))
+                elif filename.endswith('.whl'):
                     shutil.copyfile(destination, project / 'wheels' / filename)
+                elif compatible_wheel is not None:
+                    # Registry solve provenance stays unchanged; retain the locked
+                    # published bytes for the separate cold, all-local apply.
+                    wheel_url = urllib.parse.urlsplit(compatible_wheel['url'])
+                    wheel_hash = compatible_wheel.get('hash')
+                    if (wheel_url.scheme != 'https' or wheel_url.hostname != 'files.pythonhosted.org'
+                            or wheel_url.query or wheel_url.fragment or wheel_url.username or wheel_url.password
+                            or not isinstance(wheel_hash, str) or not re.fullmatch(r'sha256:[0-9a-f]{64}', wheel_hash)):
+                        raise PreparationError('unsupported artifact URL')
+                    wheel_destination = project / 'wheels' / Path(wheel_url.path).name
+                    with _open_registry_artifact(compatible_wheel['url']) as response:
+                        redirected = urllib.parse.urlsplit(response.geturl())
+                        if (redirected.scheme != 'https' or redirected.hostname != 'files.pythonhosted.org'
+                                or redirected.query or redirected.fragment or redirected.username or redirected.password):
+                            raise PreparationError('unsupported artifact redirect')
+                        wheel_destination.write_bytes(response.read())
+                    if wheel_hash != 'sha256:' + sha256_file(wheel_destination):
+                        raise PreparationError('source artifact digest mismatch')
                 else:
                     # The registry solve and independent wheel build must both
                     # use the shimmed copy, never execute the original unguarded.
@@ -446,6 +531,11 @@ class RegistryBuilder:
                         effective_config(inputs)['private_bindings'], core)
                 artifacts.append(sha256_file(matching[0]))
                 bindings.append(json.dumps(name) + ' = { path = ' + json.dumps('wheels/' + matching[0].name) + ' }')
+            if reused:
+                (project / 'image-registry-artifacts.json').write_text(json.dumps({name: {
+                    'source': wheel.origin, 'wheel': 'wheels/' + wheel.path.name,
+                    'wheel_hash': wheel.wheel_hash, 'image_baseline': wheel.image_identity}
+                    for name, wheel in reused.items()}, sort_keys=True))
             if any(inventory.get(name) != value for name, value in core.items()):
                 raise PreparationError('exact core source baseline changed')
             # The solve provenance remains separate. The apply project references only retained wheels.
@@ -454,10 +544,12 @@ class RegistryBuilder:
                 '\n[tool.uv]\npackage = false\n[tool.uv.sources]\n' + '\n'.join(bindings) + '\n')
             (project / 'uv.lock').unlink()
             self._run(['lock', '--offline', '--no-config'], project, cache, venv)
+            if not verify_python_target(project / 'pyproject.toml', project / 'uv.lock'):
+                raise PreparationError('unsupported builder target, tool or index policy')
             shutil.rmtree(venv)
             shutil.rmtree(cache)
             self._run(['sync', '--frozen', '--no-build', '--offline', '--no-config'], project, cache, venv)
-            material = wheel_payload_material(project / 'wheels') if (image_wheels or materialize) else None
+            material = wheel_payload_material(project / 'wheels') if (image_wheels or materialize or reused) else None
             if not verify_environment(venv, {n: v['version'] for n, v in inventory.items()}, material).ok:
                 raise PreparationError('cold-cache materialization mismatch')
             if operation in ('upgrade-core', 'upgrade') and not os.access(venv / 'bin' / 'gunicorn', os.X_OK):
@@ -536,14 +628,16 @@ class RegistryBuilder:
         baseline = inputs['baseline']
         if any(historical.get(key) != baseline.get(key) for key in ('target', 'tool', 'image_baseline')):
             raise PreparationError('historical target mismatch')
-        if sys.version_info[:2] != (3, 12) or os.geteuid() == 0:
+        if baseline['target'] != python_target() or os.geteuid() == 0:
             raise PreparationError('rollback preparation requires the qualified non-root Python target')
         if subprocess.run([self.uv_binary, '--version'], capture_output=True, check=True).stdout.decode().split()[:2] != ['uv', UV_VERSION]:
             raise PreparationError('builder uv release mismatch')
         bundle = historical['publication']['result']['bundle']
         directory = self.store / bundle['digest']
         verify_retained(directory, bundle['digest'])
-        if (sha256_file(directory / 'pyproject.toml') != bundle['project_digest'] or
+        if (not verify_python_target(directory / 'pyproject.toml', directory / 'uv.lock') or
+                not verify_python_target(directory / 'solve-project.toml', directory / 'solve.lock') or
+                sha256_file(directory / 'pyproject.toml') != bundle['project_digest'] or
                 sha256_file(directory / 'uv.lock') != bundle['lock_digest'] or
                 json.loads((directory / 'inventory.json').read_text()) != bundle['inventory'] or
                 json.loads((directory / 'tool.json').read_text()) != {'uv': UV_VERSION, 'target': baseline['target']}):
@@ -580,9 +674,57 @@ class RegistryBuilder:
         Preparation._validate_result(inputs, result)
         return result
 
+    def _reuse_registry_wheels(self, lock: dict, wheels: dict[str, ImageRegistryWheel],
+                               project: Path) -> dict[str, ImageRegistryWheel]:
+        from packaging.markers import Marker
+        from .image_baseline import registry_sdist_identity, validate_registry_wheel
+        if not wheels or self.private_snapshot is not None:
+            return {}
+        # Only reachable, concrete-target required dependencies are eligible.
+        # Optional/unknown branches are not promoted into the installed target.
+        rows = {canonicalize_name(row['name']): row for row in lock['package']}
+        active = set()
+        pending = ['managed-candidate']
+        while pending:
+            name = pending.pop()
+            if name in active or name not in rows:
+                continue
+            row = rows[name]
+            markers = row.get('resolution-markers', [])
+            if markers and not any(Marker(marker).evaluate({'extra': ''}) for marker in markers):
+                continue
+            active.add(name)
+            for dependency in row.get('dependencies', []):
+                if not dependency.get('marker') or Marker(dependency['marker']).evaluate({'extra': ''}):
+                    pending.append(canonicalize_name(dependency['name']))
+        reused = {}
+        for name, wheel in wheels.items():
+            if name not in active:
+                continue
+            row = rows[name]
+            try:
+                source = registry_sdist_identity(row)
+            except PreparationError:
+                continue
+            if source != wheel.origin:
+                continue
+            destination = project / 'wheels' / wheel.path.name
+            validate_registry_wheel(wheel.path, dict(wheel.origin, wheel_hash=wheel.wheel_hash))
+            if destination.exists() or destination.is_symlink():
+                try:
+                    validate_registry_wheel(destination, dict(wheel.origin, wheel_hash=wheel.wheel_hash))
+                except PreparationError:
+                    raise PreparationError('conflicting image registry artifact') from None
+            else:
+                shutil.copyfile(wheel.path, destination)
+                validate_registry_wheel(destination, dict(wheel.origin, wheel_hash=wheel.wheel_hash))
+            reused[name] = wheel
+        return reused
+
     def _build_upgrade(self, inputs: dict[str, Any], baseline: dict[str, Any], requirements: list[str],
                        local_artifacts: dict[str, tuple[dict[str, str], Path]], direct_sources: dict[str, dict],
-                       authorizations: dict) -> dict[str, Any]:
+                       authorizations: dict,
+                       image_registry_wheels: dict[str, ImageRegistryWheel] | None = None) -> dict[str, Any]:
         """Fresh coherent core solve, then the full user solve around the frozen core."""
         if self.private_snapshot is not None:
             raise PreparationError('coherent upgrade requires the approved public index policy')
@@ -595,7 +737,8 @@ class RegistryBuilder:
         core_result = self._solve(core_inputs, operation='upgrade-core', core={},
                                   requirements=core_requirements(coherent) + ['gunicorn'], image_wheels={},
                                   local_artifacts={}, direct_sources={}, authorizations={},
-                                  seed_parent=None, validate_result=False, materialize=True)
+                                  seed_parent=None, validate_result=False, materialize=True,
+                                  image_registry_wheels=image_registry_wheels)
         core_bundle = core_result['bundle']
         core_inputs['baseline']['core'] = core_bundle['inventory']
         Preparation._validate_result(core_inputs, core_result)
@@ -611,6 +754,7 @@ class RegistryBuilder:
         result = self._solve(inputs, operation='upgrade', core=core, requirements=full_requirements,
                              image_wheels=core_wheels, local_artifacts=local_artifacts, direct_sources=direct_sources,
                              authorizations=authorizations, seed_parent='preferred', validate_result=False,
+                             image_registry_wheels=image_registry_wheels,
                              validation={'core_matches_release': True, 'requirements_satisfied': True,
                                          'durable_materialization_verified': True}, materialize=True)
         result['core_bundle'] = core_bundle

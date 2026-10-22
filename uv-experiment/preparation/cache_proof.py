@@ -1,4 +1,5 @@
 """Disposable pinned-uv proof: cache policy and frozen empty-cache reconstruction."""
+from docassemble.base.managed_python import python_requires
 from dataclasses import replace
 import hashlib
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -87,7 +88,7 @@ def main():
     bundle = ROOT / 'retained-bundle'
     bundle.mkdir()
     (bundle / 'pyproject.toml').write_text(
-        '[project]\nname="cache-proof"\nversion="1.0"\nrequires-python="==3.12.*"\n'
+        '[project]\nname="cache-proof"\nversion="1.0"\nrequires-python= "' + python_requires() + '"\n'
         f'dependencies=["titlecase @ http://127.0.0.1:{server.server_port}/{wheel.name}"]\n'
         '[tool.uv]\npackage=false\n')
     # Fixture setup is the ONLY solve. Operator/cache and all reconstruction
